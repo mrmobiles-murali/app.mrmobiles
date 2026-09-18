@@ -18,12 +18,18 @@ export default function Home() {
   const [category, setCategory] = useState<"all" | Product["category"]>("all");
   const [loading, setLoading] = useState(false);
   const [sessionReady, setSessionReady] = useState(false);
+  const [paymentsEnabled, setPaymentsEnabled] = useState(false);
   const [message, setMessage] = useState("");
 
   useEffect(() => {
+    fetch("/api/config")
+      .then((r) => r.json())
+      .then((data) => setPaymentsEnabled(Boolean(data?.paymentsEnabled)))
+      .catch(() => setPaymentsEnabled(false));
+
     const tg = window.Telegram?.WebApp;
     if (!tg) {
-      setMessage("Open this app from Telegram to enable secure checkout.");
+      setMessage("Open this app from Telegram to place an order.");
       return;
     }
 
@@ -75,9 +81,99 @@ export default function Home() {
     });
   }
 
-  async function checkout() {
+  async function placePendingOrder() {
     const tg = window.Telegram?.WebApp;
-    if (!tg || !sessionReady) {
+    if (!tg) throw new Error("Open this app from Telegram.");
+
+    const cartPayload = Object.entries(cart).map(([productId, qty]) => ({ productId, qty }));
+
+    const response = await fetch("/api/orders/place", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-telegram-init-data": tg.initData
+      },
+      body: JSON.stringify({ cart: cartPayload })
+    });
+
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Could not place order.");
+
+    setCart({});
+    setMessage(`Order placed successfully. Order ${data.orderId}`);
+    tg.HapticFeedback?.notificationOccurred("success");
+    tg.showAlert("Order received ✅\nPayment can be completed after Mr Mobiles confirms the order.");
+  }
+
+  async function payWithRazorpay() {
+    const tg = window.Telegram?.WebApp;
+    if (!tg) throw new Error("Open this app from Telegram.");
+    if (!window.Razorpay) throw new Error("Razorpay Checkout is still loading.");
+
+    const cartPayload = Object.entries(cart).map(([productId, qty]) => ({ productId, qty }));
+
+    const orderResponse = await fetch("/api/razorpay/order", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-telegram-init-data": tg.initData
+      },
+      body: JSON.stringify({ cart: cartPayload })
+    });
+
+    const order = await orderResponse.json();
+    if (!orderResponse.ok) throw new Error(order.error || "Could not create order.");
+
+    const user = tg.initDataUnsafe?.user;
+
+    const rzp = new window.Razorpay({
+      key: order.keyId,
+      amount: order.amount,
+      currency: order.currency,
+      name: "Mr Mobiles",
+      description: "Telegram Mini App order",
+      order_id: order.orderId,
+      prefill: {
+        name: [user?.first_name, user?.last_name].filter(Boolean).join(" ")
+      },
+      notes: {
+        internal_order_id: order.internalOrderId
+      },
+      theme: { color: "#14b8a6" },
+      handler: async (response: any) => {
+        const verifyResponse = await fetch("/api/razorpay/verify", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-telegram-init-data": tg.initData
+          },
+          body: JSON.stringify(response)
+        });
+
+        const verified = await verifyResponse.json();
+        if (!verifyResponse.ok) {
+          setMessage(verified.error || "Payment verification failed.");
+          tg.HapticFeedback?.notificationOccurred("error");
+          return;
+        }
+
+        setCart({});
+        setMessage(`Payment successful. Order ${verified.internalOrderId}`);
+        tg.HapticFeedback?.notificationOccurred("success");
+        tg.showAlert("Payment successful ✅\nYour Mr Mobiles order has been confirmed.");
+      }
+    });
+
+    rzp.on("payment.failed", (response: any) => {
+      setMessage(response?.error?.description || "Payment failed. Please try again.");
+      tg.HapticFeedback?.notificationOccurred("error");
+    });
+
+    rzp.open();
+  }
+
+  async function checkout() {
+    if (!sessionReady) {
       setMessage("Secure Telegram session is not ready.");
       return;
     }
@@ -85,77 +181,13 @@ export default function Home() {
       setMessage("Add an item before checkout.");
       return;
     }
-    if (!window.Razorpay) {
-      setMessage("Razorpay Checkout is still loading.");
-      return;
-    }
 
     try {
       setLoading(true);
       setMessage("");
 
-      const cartPayload = Object.entries(cart).map(([productId, qty]) => ({ productId, qty }));
-
-      const orderResponse = await fetch("/api/razorpay/order", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-telegram-init-data": tg.initData
-        },
-        body: JSON.stringify({ cart: cartPayload })
-      });
-
-      const order = await orderResponse.json();
-      if (!orderResponse.ok) throw new Error(order.error || "Could not create order.");
-
-      const user = tg.initDataUnsafe?.user;
-
-      const rzp = new window.Razorpay({
-        key: order.keyId,
-        amount: order.amount,
-        currency: order.currency,
-        name: "Mr Mobiles",
-        description: "Telegram Mini App order",
-        order_id: order.orderId,
-        prefill: {
-          name: [user?.first_name, user?.last_name].filter(Boolean).join(" ")
-        },
-        notes: {
-          internal_order_id: order.internalOrderId
-        },
-        theme: {
-          color: "#14b8a6"
-        },
-        handler: async (response: any) => {
-          const verifyResponse = await fetch("/api/razorpay/verify", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "x-telegram-init-data": tg.initData
-            },
-            body: JSON.stringify(response)
-          });
-
-          const verified = await verifyResponse.json();
-          if (!verifyResponse.ok) {
-            setMessage(verified.error || "Payment verification failed.");
-            tg.HapticFeedback?.notificationOccurred("error");
-            return;
-          }
-
-          setCart({});
-          setMessage(`Payment successful. Order ${verified.internalOrderId}`);
-          tg.HapticFeedback?.notificationOccurred("success");
-          tg.showAlert("Payment successful ✅\nYour Mr Mobiles order has been confirmed.");
-        }
-      });
-
-      rzp.on("payment.failed", (response: any) => {
-        setMessage(response?.error?.description || "Payment failed. Please try again.");
-        tg.HapticFeedback?.notificationOccurred("error");
-      });
-
-      rzp.open();
+      if (paymentsEnabled) await payWithRazorpay();
+      else await placePendingOrder();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Checkout failed.");
     } finally {
@@ -168,7 +200,7 @@ export default function Home() {
       <section className="hero">
         <div>
           <div className="eyebrow">Mr Mobiles • Telegram Shop</div>
-          <h1>Shop. Repair. Pay.</h1>
+          <h1>Shop. Repair. Order.</h1>
           <p>Phones, accessories and service bookings — directly inside Telegram.</p>
         </div>
         <div className="brandMark">Mr</div>
@@ -225,14 +257,16 @@ export default function Home() {
           <strong>{money(total)}</strong>
         </div>
         <button disabled={loading || !sessionReady || count === 0} onClick={checkout}>
-          {loading ? "Preparing…" : "Pay securely"}
+          {loading ? "Preparing…" : paymentsEnabled ? "Pay securely" : "Place order"}
         </button>
       </section>
 
       {message && <div className="status" role="status">{message}</div>}
 
       <footer>
-        Payments processed securely by Razorpay. Order verification happens on the Mr Mobiles server.
+        {paymentsEnabled
+          ? "Payments processed securely by Razorpay. Order verification happens on the Mr Mobiles server."
+          : "Online payment is temporarily unavailable. Orders can still be placed securely through Telegram."}
       </footer>
     </main>
   );
