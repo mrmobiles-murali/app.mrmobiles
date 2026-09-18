@@ -9,25 +9,73 @@ export type Product = {
 
 export const catalog: Product[] = [
   {
-    id: "phone-demo-1",
-    name: "Smartphone Deal",
-    subtitle: "8 GB + 128 GB • Demo catalog item",
-    pricePaise: 2499900,
+    id: "iphone-13-pro-128",
+    name: "iPhone 13 Pro 128GB",
+    subtitle: "Pre-owned • Confirm live stock, condition & battery health",
+    pricePaise: 5299900,
     category: "phone",
     emoji: "📱"
   },
   {
-    id: "acc-demo-1",
-    name: "Fast Charger",
-    subtitle: "Compatible fast charging accessory",
-    pricePaise: 149900,
+    id: "iphone-12-64",
+    name: "iPhone 12 64GB",
+    subtitle: "Pre-owned • Confirm live stock, condition & battery health",
+    pricePaise: 2849900,
+    category: "phone",
+    emoji: "📱"
+  },
+  {
+    id: "iphone-11-128",
+    name: "iPhone 11 128GB",
+    subtitle: "Pre-owned • Confirm live stock, condition & battery health",
+    pricePaise: 1999900,
+    category: "phone",
+    emoji: "📱"
+  },
+  {
+    id: "galaxy-s22-ultra-256",
+    name: "Galaxy S22 Ultra 5G",
+    subtitle: "Pre-owned • 256GB • Confirm live stock & condition",
+    pricePaise: 4499900,
+    category: "phone",
+    emoji: "📱"
+  },
+  {
+    id: "oneplus-11r-128",
+    name: "OnePlus 11R 5G",
+    subtitle: "Pre-owned • 128GB • Confirm live stock & condition",
+    pricePaise: 2199900,
+    category: "phone",
+    emoji: "📱"
+  },
+  {
+    id: "pixel-7-128",
+    name: "Google Pixel 7 128GB",
+    subtitle: "Pre-owned • Confirm live stock, condition & battery health",
+    pricePaise: 2649900,
+    category: "phone",
+    emoji: "📱"
+  },
+  {
+    id: "magnetic-case",
+    name: "Magnetic Protective Case",
+    subtitle: "iPhone 12–16 series • Compatibility confirmed before order",
+    pricePaise: 89900,
+    category: "accessory",
+    emoji: "🛡️"
+  },
+  {
+    id: "gan-65w-charger",
+    name: "65W GaN Dual Fast Charger",
+    subtitle: "USB-C Power Delivery • Compatibility confirmed before order",
+    pricePaise: 129900,
     category: "accessory",
     emoji: "⚡"
   },
   {
-    id: "service-demo-1",
-    name: "Display Service Booking",
-    subtitle: "Booking advance for repair inspection",
+    id: "repair-inspection",
+    name: "Repair Inspection Booking",
+    subtitle: "Device inspection booking • Final repair quote after diagnosis",
     pricePaise: 49900,
     category: "service",
     emoji: "🛠️"
