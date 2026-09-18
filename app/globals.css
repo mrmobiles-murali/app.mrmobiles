@@ -1,0 +1,249 @@
+:root {
+  color-scheme: dark;
+  --bg: #0b0d10;
+  --panel: #12161b;
+  --panel-2: #171c22;
+  --text: #f7f9fb;
+  --muted: #98a2ad;
+  --line: #252c34;
+  --accent: #14b8a6;
+  --accent-2: #0f766e;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+button { font: inherit; }
+
+.shell {
+  width: min(100%, 760px);
+  margin: 0 auto;
+  padding: 18px 16px 34px;
+}
+
+.hero {
+  padding: 18px 2px 20px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.eyebrow {
+  color: var(--accent);
+  font-weight: 800;
+  letter-spacing: .12em;
+  font-size: .72rem;
+}
+
+.hero h1 {
+  margin: 7px 0 7px;
+  font-size: clamp(2.2rem, 9vw, 4rem);
+  line-height: .96;
+  letter-spacing: -.055em;
+}
+
+.hero p {
+  max-width: 520px;
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.brandMark {
+  width: 56px;
+  height: 56px;
+  flex: 0 0 56px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 18px;
+  font-weight: 900;
+  font-size: 1.25rem;
+}
+
+.chips {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 4px 0 16px;
+  scrollbar-width: none;
+}
+
+.chip {
+  min-height: 42px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.chip.active {
+  color: #04100e;
+  background: var(--accent);
+  border-color: var(--accent);
+  font-weight: 800;
+}
+
+.grid {
+  display: grid;
+  gap: 12px;
+}
+
+.card {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  min-height: 150px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 22px;
+}
+
+.productIcon {
+  display: grid;
+  place-items: center;
+  font-size: 2.4rem;
+  background:
+    radial-gradient(circle at 30% 25%, rgba(20,184,166,.24), transparent 45%),
+    var(--panel-2);
+}
+
+.cardBody {
+  min-width: 0;
+  padding: 16px;
+}
+
+.pill {
+  display: inline-block;
+  color: var(--accent);
+  font-size: .7rem;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  font-weight: 800;
+}
+
+.card h2 {
+  margin: 7px 0 5px;
+  font-size: 1.05rem;
+}
+
+.card p {
+  margin: 0;
+  min-height: 40px;
+  color: var(--muted);
+  font-size: .88rem;
+  line-height: 1.4;
+}
+
+.cardBottom {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cardBottom strong { font-size: 1rem; }
+
+.add, .checkoutBar button {
+  border: 0;
+  background: var(--accent);
+  color: #04100e;
+  font-weight: 900;
+}
+
+.add {
+  min-width: 74px;
+  min-height: 42px;
+  border-radius: 12px;
+}
+
+.qty {
+  display: grid;
+  grid-template-columns: 38px 30px 38px;
+  align-items: center;
+  text-align: center;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.qty button {
+  height: 40px;
+  border: 0;
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 1.2rem;
+}
+
+.checkoutBar {
+  position: sticky;
+  bottom: 10px;
+  margin-top: 18px;
+  padding: 10px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--line);
+  background: rgba(18, 22, 27, .96);
+  backdrop-filter: blur(12px);
+  border-radius: 18px;
+}
+
+.checkoutBar > div {
+  min-width: 90px;
+  display: grid;
+  gap: 2px;
+}
+
+.checkoutBar span {
+  color: var(--muted);
+  font-size: .78rem;
+}
+
+.checkoutBar strong { font-size: 1.1rem; }
+
+.checkoutBar button {
+  min-height: 48px;
+  flex: 1;
+  border-radius: 13px;
+}
+
+.checkoutBar button:disabled {
+  opacity: .42;
+}
+
+.status {
+  margin-top: 14px;
+  padding: 13px 14px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 14px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+footer {
+  padding: 22px 8px 0;
+  color: #6f7a85;
+  text-align: center;
+  font-size: .76rem;
+  line-height: 1.5;
+}
+
+@media (min-width: 640px) {
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
