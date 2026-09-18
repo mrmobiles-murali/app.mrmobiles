@@ -179,6 +179,9 @@ export default function Home() {
         setMessage(`Payment successful. Order ${verified.internalOrderId}`);
         tg.HapticFeedback?.notificationOccurred("success");
         tg.showAlert("Payment successful ✅\nYour Mr Mobiles order has been confirmed.");
+        window.location.assign(
+          `https://mrmobiles.in/?payment=success&order=${encodeURIComponent(verified.internalOrderId)}`
+        );
       }
     });
 
