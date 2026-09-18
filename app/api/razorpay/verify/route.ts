@@ -22,13 +22,22 @@ export async function POST(request: NextRequest) {
 
     const { data: order, error } = await supabase
       .from("orders")
-      .select("id, telegram_user_id, amount_paise, razorpay_order_id, status")
+      .select("id, telegram_user_id, amount_paise, razorpay_order_id, razorpay_payment_id, status")
       .eq("razorpay_order_id", checkoutOrderId)
       .eq("telegram_user_id", user.id)
       .single();
 
     if (error || !order?.razorpay_order_id) {
       throw new Error("Order not found.");
+    }
+
+    if (order.status === "paid") {
+      return NextResponse.json({
+        ok: true,
+        internalOrderId: order.id,
+        paymentId: order.razorpay_payment_id || paymentId,
+        alreadyVerified: true
+      });
     }
 
     const valid = verifyPaymentSignature({
@@ -42,14 +51,17 @@ export async function POST(request: NextRequest) {
       throw new Error("Payment signature verification failed.");
     }
 
-    await supabase
+    const { error: updateError } = await supabase
       .from("orders")
       .update({
         status: "paid",
         razorpay_payment_id: paymentId,
         paid_at: new Date().toISOString()
       })
-      .eq("id", order.id);
+      .eq("id", order.id)
+      .neq("status", "paid");
+
+    if (updateError) throw new Error(updateError.message);
 
     await sendTelegramMessage(
       user.id,
