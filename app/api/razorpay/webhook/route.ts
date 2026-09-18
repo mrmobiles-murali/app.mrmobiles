@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { verifyWebhookSignature } from "@/lib/razorpay";
 import { sendTelegramMessage } from "@/lib/telegram-bot";
+import { addWorkflowEvent } from "@/lib/web-automation";
 
 export async function POST(request: NextRequest) {
   try {
@@ -27,7 +28,7 @@ export async function POST(request: NextRequest) {
     const supabase = getSupabaseAdmin();
     const { data: order } = await supabase
       .from("orders")
-      .select("id, telegram_user_id, status, razorpay_payment_id")
+      .select("id, telegram_user_id, source, tracking_code, status, razorpay_payment_id")
       .eq("razorpay_order_id", razorpayOrderId)
       .maybeSingle();
 
@@ -41,26 +42,54 @@ export async function POST(request: NextRequest) {
           .from("orders")
           .update({
             status: "paid",
+            workflow_status: order.source === "web" ? "confirmed" : "new",
             razorpay_payment_id: paymentId || order.razorpay_payment_id,
-            paid_at: new Date().toISOString()
+            paid_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
           })
           .eq("id", order.id)
           .neq("status", "paid");
 
         if (updateError) throw new Error(updateError.message);
 
-        await sendTelegramMessage(
-          Number(order.telegram_user_id),
-          `✅ <b>Payment received</b>\nOrder: <code>${order.id}</code>${paymentId ? `\nPayment: <code>${paymentId}</code>` : ""}\n\nThank you for choosing Mr Mobiles.`
-        );
+        if (order.source === "web" && order.tracking_code) {
+          await addWorkflowEvent({
+            entityType: "order",
+            entityId: order.id,
+            referenceCode: order.tracking_code,
+            status: "confirmed",
+            message: "Payment received. Your order is confirmed."
+          });
+        }
+
+        if (order.telegram_user_id) {
+          await sendTelegramMessage(
+            Number(order.telegram_user_id),
+            `✅ <b>Payment received</b>\nOrder: <code>${order.id}</code>${paymentId ? `\nPayment: <code>${paymentId}</code>` : ""}\n\nThank you for choosing Mr Mobiles.`
+          );
+        }
       }
     }
 
     if (event === "payment.failed" && order.status !== "paid") {
       await supabase
         .from("orders")
-        .update({ status: "payment_failed" })
+        .update({
+          status: "payment_failed",
+          workflow_status: order.source === "web" ? "payment_issue" : "new",
+          updated_at: new Date().toISOString()
+        })
         .eq("id", order.id);
+
+      if (order.source === "web" && order.tracking_code) {
+        await addWorkflowEvent({
+          entityType: "order",
+          entityId: order.id,
+          referenceCode: order.tracking_code,
+          status: "payment_issue",
+          message: "Payment failed. Please try again or contact Mr Mobiles."
+        });
+      }
     }
 
     return NextResponse.json({ ok: true });
