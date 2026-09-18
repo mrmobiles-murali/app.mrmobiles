@@ -31,14 +31,25 @@ export async function POST(request: NextRequest) {
 
     if (insertError || !orderRow) throw new Error(insertError?.message || "Could not create order.");
 
-    const { keyId, order } = await createRazorpayOrder({
-      amountPaise: priced.amountPaise,
-      receipt: `mr_${String(orderRow.id).replaceAll("-", "").slice(0, 30)}`,
-      notes: {
-        internal_order_id: orderRow.id,
-        telegram_user_id: String(user.id)
-      }
-    });
+    let razorpayResult;
+    try {
+      razorpayResult = await createRazorpayOrder({
+        amountPaise: priced.amountPaise,
+        receipt: `mr_${String(orderRow.id).replaceAll("-", "").slice(0, 30)}`,
+        notes: {
+          internal_order_id: orderRow.id,
+          telegram_user_id: String(user.id)
+        }
+      });
+    } catch (paymentError) {
+      await supabase
+        .from("orders")
+        .update({ status: "payment_create_failed" })
+        .eq("id", orderRow.id);
+      throw paymentError;
+    }
+
+    const { keyId, order } = razorpayResult;
 
     const { error: updateError } = await supabase
       .from("orders")
