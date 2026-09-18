@@ -47,6 +47,24 @@ export default function Home() {
         const data = await r.json();
         if (!r.ok) throw new Error(data.error || "Telegram session validation failed.");
         setSessionReady(true);
+
+        try {
+          const reconcileResponse = await fetch("/api/orders/reconcile", {
+            method: "POST",
+            headers: { "x-telegram-init-data": tg.initData }
+          });
+          const reconciled = await reconcileResponse.json();
+          if (reconcileResponse.ok && reconciled?.reconciled > 0) {
+            setMessage(
+              reconciled.reconciled === 1
+                ? "A previous payment was confirmed successfully."
+                : `${reconciled.reconciled} previous payments were confirmed successfully.`
+            );
+            tg.HapticFeedback?.notificationOccurred("success");
+          }
+        } catch {
+          // Reconciliation is best-effort and should not block shopping.
+        }
       })
       .catch((e) => setMessage(e.message));
   }, []);
