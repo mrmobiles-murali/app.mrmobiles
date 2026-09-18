@@ -50,16 +50,22 @@ Run `database/schema.sql` in a new Supabase project.
 The catalog currently contains demo items in `lib/catalog.ts`; replace those with the real Mr Mobiles inventory before launch.
 
 
-## Razorpay launch gate
-Razorpay credentials can be present without exposing checkout. Keep:
+## Razorpay payment flow
+
+Production checkout is enabled whenever `RAZORPAY_KEY_ID` and `RAZORPAY_KEY_SECRET` are present, unless the emergency kill-switch is set:
 
 `RAZORPAY_PAYMENTS_ENABLED=false`
 
-until the real Mr Mobiles catalog is loaded and `RAZORPAY_WEBHOOK_SECRET` is configured.
+Payment confirmation is protected by:
+1. Telegram initData validation.
+2. Trusted server-side catalog pricing.
+3. Razorpay checkout signature verification.
+4. Server-side Razorpay Payment API verification for order id, amount, currency and captured status.
+5. Supabase idempotent paid-state updates.
+6. Automatic reconciliation of recent unpaid Razorpay orders whenever the Mini App is reopened.
+7. Telegram confirmation after the order transitions to paid.
 
-When ready to launch:
-1. Configure Razorpay webhook to `https://app.mrmobiles.in/api/razorpay/webhook`.
-2. Subscribe to `order.paid`, `payment.captured`, and `payment.failed`.
-3. Add the generated webhook secret as `RAZORPAY_WEBHOOK_SECRET` in Vercel.
-4. Complete an end-to-end test from Telegram.
-5. Set `RAZORPAY_PAYMENTS_ENABLED=true` and redeploy.
+A Razorpay webhook remains recommended for asynchronous event delivery and can use:
+`https://app.mrmobiles.in/api/razorpay/webhook`
+
+When configured, set `RAZORPAY_WEBHOOK_SECRET` in Vercel and subscribe to `order.paid`, `payment.captured` and `payment.failed`.
