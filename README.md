@@ -48,3 +48,18 @@ Run `database/schema.sql` in a new Supabase project.
 8. Switch to Live keys only after successful end-to-end testing.
 
 The catalog currently contains demo items in `lib/catalog.ts`; replace those with the real Mr Mobiles inventory before launch.
+
+
+## Razorpay launch gate
+Razorpay credentials can be present without exposing checkout. Keep:
+
+`RAZORPAY_PAYMENTS_ENABLED=false`
+
+until the real Mr Mobiles catalog is loaded and `RAZORPAY_WEBHOOK_SECRET` is configured.
+
+When ready to launch:
+1. Configure Razorpay webhook to `https://app.mrmobiles.in/api/razorpay/webhook`.
+2. Subscribe to `order.paid`, `payment.captured`, and `payment.failed`.
+3. Add the generated webhook secret as `RAZORPAY_WEBHOOK_SECRET` in Vercel.
+4. Complete an end-to-end test from Telegram.
+5. Set `RAZORPAY_PAYMENTS_ENABLED=true` and redeploy.
