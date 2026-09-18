@@ -72,3 +72,47 @@ export function verifyWebhookSignature(rawBody: string, signature: string) {
   const b = Buffer.from(signature || "", "hex");
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
+
+
+function razorpayAuthHeader() {
+  const { keyId, keySecret } = getCredentials();
+  return "Basic " + Buffer.from(`${keyId}:${keySecret}`).toString("base64");
+}
+
+export async function fetchRazorpayPayment(paymentId: string) {
+  const response = await fetch(`https://api.razorpay.com/v1/payments/${encodeURIComponent(paymentId)}`, {
+    headers: { Authorization: razorpayAuthHeader() },
+    cache: "no-store"
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data?.error?.description || "Could not fetch Razorpay payment.");
+  }
+  return data as {
+    id: string;
+    amount: number;
+    currency: string;
+    status: string;
+    captured?: boolean;
+    order_id?: string | null;
+  };
+}
+
+export async function fetchRazorpayOrderPayments(orderId: string) {
+  const response = await fetch(`https://api.razorpay.com/v1/orders/${encodeURIComponent(orderId)}/payments`, {
+    headers: { Authorization: razorpayAuthHeader() },
+    cache: "no-store"
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data?.error?.description || "Could not fetch Razorpay order payments.");
+  }
+  return (Array.isArray(data?.items) ? data.items : []) as Array<{
+    id: string;
+    amount: number;
+    currency: string;
+    status: string;
+    captured?: boolean;
+    order_id?: string | null;
+  }>;
+}
