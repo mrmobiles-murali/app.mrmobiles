@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-export async function POST() {
+async function configureMenu() {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) return NextResponse.json({ ok: false, error: "Bot token missing" }, { status: 500 });
 
@@ -23,3 +23,6 @@ export async function POST() {
     description: data?.description || null
   }, { status: response.ok ? 200 : 400 });
 }
+
+export async function GET() { return configureMenu(); }
+export async function POST() { return configureMenu(); }
