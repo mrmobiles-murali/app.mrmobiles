@@ -1,8 +1,16 @@
+import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 const SETUP_KEY = "mm-finalize-2026-09-18-k9Q4x7";
 const MINI_APP_URL = "https://appmrmobiles.vercel.app";
+const WEBHOOK_URL = "https://appmrmobiles.vercel.app/api/telegram/webhook";
+
+function telegramWebhookSecret() {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) throw new Error("TELEGRAM_BOT_TOKEN missing");
+  return crypto.createHash("sha256").update(token).digest("hex").slice(0, 32);
+}
 
 async function telegram(method: string, body?: Record<string, unknown>) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -52,6 +60,14 @@ export async function GET(request: NextRequest) {
         web_app: { url: MINI_APP_URL }
       }
     });
+    await telegram("setWebhook", {
+      url: WEBHOOK_URL,
+      secret_token: telegramWebhookSecret(),
+      allowed_updates: ["message"],
+      drop_pending_updates: false
+    });
+
+    const webhookInfo = await telegram("getWebhookInfo");
 
     const supabase = getSupabaseAdmin();
     const { count, error } = await supabase
@@ -65,7 +81,8 @@ export async function GET(request: NextRequest) {
       telegram: {
         id: me.id,
         username: me.username,
-        name: [me.first_name, me.last_name].filter(Boolean).join(" ")
+        webhookSet: webhookInfo?.url === WEBHOOK_URL,
+        pendingUpdateCount: webhookInfo?.pending_update_count ?? 0
       },
       miniAppUrl: MINI_APP_URL,
       supabase: { ordersTable: true, currentOrderCount: count ?? 0 }
