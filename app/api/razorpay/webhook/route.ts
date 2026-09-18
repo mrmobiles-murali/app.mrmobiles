@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { verifyWebhookSignature } from "@/lib/razorpay";
+import { sendTelegramMessage } from "@/lib/telegram-bot";
 
 export async function POST(request: NextRequest) {
   try {
@@ -16,37 +17,56 @@ export async function POST(request: NextRequest) {
 
     const paymentEntity = payload?.payload?.payment?.entity;
     const orderEntity = payload?.payload?.order?.entity;
-    const razorpayOrderId =
-      paymentEntity?.order_id ||
-      orderEntity?.id ||
-      null;
-
+    const razorpayOrderId = paymentEntity?.order_id || orderEntity?.id || null;
     const paymentId = paymentEntity?.id || null;
 
-    if (razorpayOrderId) {
-      const supabase = getSupabaseAdmin();
+    if (!razorpayOrderId) {
+      return NextResponse.json({ ok: true });
+    }
 
-      if (event === "order.paid" || event === "payment.captured") {
-        await supabase
+    const supabase = getSupabaseAdmin();
+    const { data: order } = await supabase
+      .from("orders")
+      .select("id, telegram_user_id, status, razorpay_payment_id")
+      .eq("razorpay_order_id", razorpayOrderId)
+      .maybeSingle();
+
+    if (!order) {
+      return NextResponse.json({ ok: true });
+    }
+
+    if (event === "order.paid" || event === "payment.captured") {
+      if (order.status !== "paid") {
+        const { error: updateError } = await supabase
           .from("orders")
           .update({
             status: "paid",
-            razorpay_payment_id: paymentId,
+            razorpay_payment_id: paymentId || order.razorpay_payment_id,
             paid_at: new Date().toISOString()
           })
-          .eq("razorpay_order_id", razorpayOrderId);
-      }
+          .eq("id", order.id)
+          .neq("status", "paid");
 
-      if (event === "payment.failed") {
-        await supabase
-          .from("orders")
-          .update({ status: "payment_failed" })
-          .eq("razorpay_order_id", razorpayOrderId);
+        if (updateError) throw new Error(updateError.message);
+
+        await sendTelegramMessage(
+          Number(order.telegram_user_id),
+          `✅ <b>Payment received</b>\nOrder: <code>${order.id}</code>${paymentId ? `\nPayment: <code>${paymentId}</code>` : ""}\n\nThank you for choosing Mr Mobiles.`
+        );
       }
     }
 
+    if (event === "payment.failed" && order.status !== "paid") {
+      await supabase
+        .from("orders")
+        .update({ status: "payment_failed" })
+        .eq("id", order.id);
+    }
+
     return NextResponse.json({ ok: true });
-  } catch {
-    return NextResponse.json({ ok: false }, { status: 400 });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Webhook processing failed.";
+    const status = message.includes("RAZORPAY_WEBHOOK_SECRET") ? 503 : 400;
+    return NextResponse.json({ ok: false }, { status });
   }
 }
