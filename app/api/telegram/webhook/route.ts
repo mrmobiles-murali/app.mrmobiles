@@ -2,7 +2,7 @@ import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
-const MINI_APP_URL = "https://appmrmobiles.vercel.app";
+const MINI_APP_URL = "https://mrmobiles.in";
 
 function webhookSecret() {
   const token = process.env.TELEGRAM_BOT_TOKEN;

@@ -1,6 +1,6 @@
 # Mr Mobiles — New Telegram Mini App
 
-Clean-slate rebuild for **https://app.mrmobiles.in**.
+Clean-slate rebuild for **https://mrmobiles.in**.
 
 ## Included
 
@@ -16,10 +16,10 @@ Clean-slate rebuild for **https://app.mrmobiles.in**.
 
 ## Production target
 
-Mini App: `https://app.mrmobiles.in`
+Mini App: `https://mrmobiles.in`
 
 Razorpay webhook:
-`https://app.mrmobiles.in/api/razorpay/webhook`
+`https://mrmobiles.in/api/razorpay/webhook`
 
 ## Environment variables
 
@@ -40,9 +40,9 @@ Run `database/schema.sql` in a new Supabase project.
 
 1. Deploy this repository to Vercel.
 2. Add the environment variables.
-3. Attach `app.mrmobiles.in`.
+3. Attach `mrmobiles.in`.
 4. Add the Vercel DNS record at the DNS provider if requested.
-5. Configure the Telegram Mini App/menu button with `https://app.mrmobiles.in`.
+5. Configure the Telegram Mini App/menu button with `https://mrmobiles.in`.
 6. Configure the Razorpay webhook.
 7. Test in Razorpay Test Mode.
 8. Switch to Live keys only after successful end-to-end testing.
@@ -66,6 +66,6 @@ Payment confirmation is protected by:
 7. Telegram confirmation after the order transitions to paid.
 
 A Razorpay webhook remains recommended for asynchronous event delivery and can use:
-`https://app.mrmobiles.in/api/razorpay/webhook`
+`https://mrmobiles.in/api/razorpay/webhook`
 
 When configured, set `RAZORPAY_WEBHOOK_SECRET` in Vercel and subscribe to `order.paid`, `payment.captured` and `payment.failed`.
