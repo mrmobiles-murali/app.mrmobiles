@@ -69,3 +69,13 @@ A Razorpay webhook remains recommended for asynchronous event delivery and can u
 `https://app.mrmobiles.in/api/razorpay/webhook`
 
 When configured, set `RAZORPAY_WEBHOOK_SECRET` in Vercel and subscribe to `order.paid`, `payment.captured` and `payment.failed`.
+
+## Manage this bot from Termux
+
+The complete phone setup, deployment, support and verification workflow is in [docs/TERMUX_WORKFLOW.md](docs/TERMUX_WORKFLOW.md). Start the interactive control menu with:
+
+```bash
+python3 scripts/botctl.py
+```
+
+The tool keeps credentials outside Git, checks the deployed bot identity, preserves pending Telegram updates and provides setup/status monitoring. The bot now supports `/help`, `/id`, private customer support forwarding and administrator-only replies. Set `TELEGRAM_ADMIN_IDS` in the hosting environment to enable support forwarding. The Mini App URL uses `TELEGRAM_MINI_APP_URL` when set, otherwise the request origin.
