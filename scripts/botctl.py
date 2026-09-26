@@ -101,7 +101,7 @@ def load_config(path=CONFIG_PATH):
 
 
 def configure(path=CONFIG_PATH):
-    print("Mr Mobiles setup. The token stays on this device and is not printed.")
+    print("Mr Mobiles setup. Your token is stored privately on this device and is never printed.")
     print("Get the existing bot's token from Telegram @BotFather; do not create a second bot.")
     token = getpass.getpass("Existing bot token (hidden): ").strip()
     if not TOKEN_PATTERN.fullmatch(token):
@@ -242,7 +242,7 @@ def main():
         print("ACTION NEEDED: " + str(exc), file=sys.stderr)
         return 1
     except (KeyboardInterrupt, EOFError):
-        print("\nStopped. The hosted bot keeps running.")
+        print("\nStopped the local control tool.")
         return 130
 
 
