@@ -22,6 +22,10 @@ export default function Home() {
   const [message, setMessage] = useState("");
 
   useEffect(() => {
+    const requestedCategory = new URLSearchParams(window.location.search).get("category");
+    if (requestedCategory === "phone" || requestedCategory === "accessory" || requestedCategory === "service") {
+      setCategory(requestedCategory);
+    }
     fetch("/api/config")
       .then((r) => r.json())
       .then((data) => setPaymentsEnabled(Boolean(data?.paymentsEnabled)))
@@ -180,7 +184,7 @@ export default function Home() {
         tg.HapticFeedback?.notificationOccurred("success");
         tg.showAlert("Payment successful ✅\nYour Mr Mobiles order has been confirmed.");
         window.location.assign(
-          `https://mrmobiles.in/?payment=success&order=${encodeURIComponent(verified.internalOrderId)}`
+          `/?payment=success&order=${encodeURIComponent(verified.internalOrderId)}`
         );
       }
     });

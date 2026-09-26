@@ -3,3 +3,7 @@ node_modules
 .env
 .env.local
 .vercel
+
+*.tsbuildinfo
+__pycache__/
+.venv/
