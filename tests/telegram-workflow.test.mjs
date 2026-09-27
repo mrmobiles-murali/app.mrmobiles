@@ -169,7 +169,7 @@ test("guided repair reply bypasses generic AI and forwards the exact details", a
   const { ctx, calls } = context({
     repairIntake: async (userId, name, details) => {
       forwarded = { userId, name, details };
-      return true;
+      return { referenceCode: "MRR-ABCDEF1234" };
     },
     aiReply: async () => {
       aiCalled = true;
@@ -188,8 +188,10 @@ test("guided repair reply bypasses generic AI and forwards the exact details", a
   });
   assert.equal(calls.length, 1);
   assert.equal(calls[0].method, "sendMessage");
-  assert.match(calls[0].body.text, /Repair details received/);
+  assert.match(calls[0].body.text, /Repair ticket created/);
+  assert.match(calls[0].body.text, /MRR-ABCDEF1234/);
   assert.match(calls[0].body.text, /Samsung S23/);
+  assert.equal(calls[0].body.reply_markup.inline_keyboard[0][0].callback_data, "repair_status:MRR-ABCDEF1234");
 });
 
 test("guided repair reply asks for more detail when input is too short", async () => {
@@ -197,7 +199,7 @@ test("guided repair reply asks for more detail when input is too short", async (
   const { ctx, calls } = context({
     repairIntake: async () => {
       forwarded = true;
-      return true;
+      return { referenceCode: "MRR-ABCDEF1234" };
     }
   });
   await handleBotUpdate(message("S23", {
@@ -206,6 +208,112 @@ test("guided repair reply asks for more detail when input is too short", async (
   assert.equal(forwarded, false);
   assert.equal(calls[0].body.reply_markup.force_reply, true);
   assert.match(calls[0].body.text, /brand, exact model and the problem/i);
+});
+
+test("repairs command lists only customer repair tickets", async () => {
+  let queried;
+  const { ctx, calls } = context({
+    repairs: async userId => {
+      queried = userId;
+      return [{
+        reference_code: "MRR-ABCDEF1234",
+        device_brand: "Samsung",
+        device_model: "A17 5G",
+        issue_or_condition: "Touch not working",
+        status: "diagnosing",
+        quoted_amount_paise: null,
+        status_note: "Inspection started"
+      }];
+    }
+  });
+  await handleBotUpdate(message("/repairs"), ctx);
+  assert.equal(queried, 42);
+  assert.match(calls[0].body.text, /MRR-ABCDEF1234/);
+  assert.match(calls[0].body.text, /diagnosing/);
+});
+
+test("repair status command is scoped to the Telegram user", async () => {
+  let queried;
+  const { ctx, calls } = context({
+    repairStatus: async (userId, referenceCode) => {
+      queried = { userId, referenceCode };
+      return {
+        reference_code: referenceCode,
+        device_brand: "Samsung",
+        device_model: "A17 5G",
+        issue_or_condition: "Touch not working",
+        status: "awaiting_approval",
+        quoted_amount_paise: 250000,
+        status_note: "Touch panel replacement"
+      };
+    }
+  });
+  await handleBotUpdate(message("/repairstatus MRR-ABCDEF1234"), ctx);
+  assert.deepEqual(queried, { userId: 42, referenceCode: "MRR-ABCDEF1234" });
+  assert.match(calls[0].body.text, /₹2,500/);
+  assert.match(calls[0].body.text, /awaiting_approval/);
+});
+
+test("repair quote approval callback is tied to authenticated customer", async () => {
+  let approved;
+  const { ctx, calls } = context({
+    approveRepair: async (userId, referenceCode) => {
+      approved = { userId, referenceCode };
+      return true;
+    }
+  });
+  await handleBotUpdate(callback("repair_approve:MRR-ABCDEF1234"), ctx);
+  assert.deepEqual(approved, { userId: 42, referenceCode: "MRR-ABCDEF1234" });
+  assert.equal(calls[0].method, "answerCallbackQuery");
+  assert.match(calls[1].body.text, /quote approved/i);
+});
+
+test("admin can update repair status and non-admin cannot", async () => {
+  let update;
+  const admin = message("/repairupdate MRR-ABCDEF1234 repairing Work started", { from: { id: 99, first_name: "Admin" } });
+  const { ctx, calls } = context({
+    repairUpdate: async (referenceCode, status, note) => {
+      update = { referenceCode, status, note };
+      return true;
+    }
+  });
+  await handleBotUpdate(admin, ctx);
+  assert.deepEqual(update, {
+    referenceCode: "MRR-ABCDEF1234",
+    status: "repairing",
+    note: "Work started"
+  });
+  assert.match(calls[0].body.text, /updated to repairing/);
+
+  let unauthorized = false;
+  const second = context({
+    repairUpdate: async () => {
+      unauthorized = true;
+      return true;
+    }
+  });
+  await handleBotUpdate(message("/repairupdate MRR-ABCDEF1234 ready Done"), second.ctx);
+  assert.equal(unauthorized, false);
+  assert.match(second.calls[0].body.text, /support team/);
+});
+
+test("admin repair quote sends rupee amount to lifecycle handler", async () => {
+  let quote;
+  const { ctx, calls } = context({
+    repairQuote: async (referenceCode, amountPaise, note) => {
+      quote = { referenceCode, amountPaise, note };
+      return true;
+    }
+  });
+  await handleBotUpdate(message("/repairquote MRR-ABCDEF1234 2500 Touch panel replacement", {
+    from: { id: 99, first_name: "Admin" }
+  }), ctx);
+  assert.deepEqual(quote, {
+    referenceCode: "MRR-ABCDEF1234",
+    amountPaise: 250000,
+    note: "Touch panel replacement"
+  });
+  assert.match(calls[0].body.text, /2,500/);
 });
 
 test("feedback callback saves rating for authenticated Telegram user", async () => {
