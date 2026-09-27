@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 
-export const BOT_WORKFLOW_VERSION = "2026-09-27.5";
+export const BOT_WORKFLOW_VERSION = "2026-09-27.6";
 export const BOT_COMMANDS = [
   { command: "start", description: "Welcome and open Mr Mobiles" },
   { command: "ai", description: "Ask the Mr Mobiles AI assistant" },
@@ -81,6 +81,7 @@ export type BotContext = {
     onDraft?: (partial: string) => Promise<void>
   ) => Promise<AiAssistantReply>;
   handoff?: (userId: number, name: string) => Promise<boolean>;
+  repairIntake?: (userId: number, name: string, details: string) => Promise<boolean>;
   feedback?: (userId: number, responseId: number, rating: 1 | -1) => Promise<boolean>;
 };
 
@@ -353,6 +354,46 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
     if (category) url.searchParams.set("category", category);
     return { inline_keyboard: [[{ text: label, web_app: { url: url.toString() } }]] };
   };
+
+  const repliedPrompt = typeof message?.reply_to_message?.text === "string"
+    ? message.reply_to_message.text
+    : "";
+  const isRepairIntakeReply = repliedPrompt.startsWith("🛠️ Repair Diagnosis");
+
+  if (isRepairIntakeReply && text && !text.startsWith("/")) {
+    if (text.length < 6) {
+      await send({
+        text: "🛠️ Please send a little more detail — brand, exact model and the problem.\n\nExample: Samsung S23 — display cracked and touch not working.",
+        reply_markup: { force_reply: true, input_field_placeholder: "Brand + model + problem" }
+      });
+      return;
+    }
+
+    const name = [message.from.first_name, message.from.last_name]
+      .filter((value: unknown) => typeof value === "string")
+      .join(" ")
+      .slice(0, 160);
+    const details = text.slice(0, 1200);
+    const submitted = context.repairIntake
+      ? await context.repairIntake(userId, name || "Customer", details)
+      : false;
+
+    const serviceUrl = new URL(context.appUrl);
+    serviceUrl.searchParams.set("category", "service");
+
+    await send({
+      text: submitted
+        ? `✅ Repair details received\n\nYour details:\n${details}\n\nMr Mobiles repair team can reply to you here. Final diagnosis and repair price will be confirmed after inspection.`
+        : `🛠️ Repair details understood\n\nYour details:\n${details}\n\nI couldn’t forward this to the repair team right now. Please tap Talk to Human or try again shortly.`,
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "🛠 Browse Repair Services", web_app: { url: serviceUrl.toString() } }],
+          [{ text: "👤 Talk to Human", callback_data: "human_support" }]
+        ]
+      }
+    });
+    return;
+  }
 
   if (command === "/start") {
     await send({
