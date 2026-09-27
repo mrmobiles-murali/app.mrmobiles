@@ -233,6 +233,70 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
     const chatId = callbackQuery.message.chat.id as number;
     const data = typeof callbackQuery.data === "string" ? callbackQuery.data : "";
 
+    if (data === "ai_help") {
+      await safeAnswerCallback(context, callbackQuery.id, "AI assistant ready");
+      await context.call("sendMessage", {
+        chat_id: chatId,
+        text: "🤖 Ask me naturally about phones, prices, stock, repairs or your orders. Example: 30k budget la best phone suggest pannu."
+      });
+      return;
+    }
+
+    if (data === "orders_latest") {
+      await safeAnswerCallback(context, callbackQuery.id, "Loading your orders…");
+      const orders = await context.orders(userId);
+      const text = orders.length
+        ? orders.slice(0, 5).map((order, i) => {
+            const workflow = order.workflow_status ? ` • ${order.workflow_status}` : "";
+            return `${i + 1}. #${String(order.id).slice(0, 8)} • ${formatInr(order.amount_paise)}\nPayment: ${order.status}${workflow}`;
+          }).join("\n\n")
+        : "You don't have any Mr Mobiles orders yet.";
+      await context.call("sendMessage", { chat_id: chatId, text: `🧾 Your recent orders\n\n${text}` });
+      return;
+    }
+
+    if (data === "repairs_latest") {
+      await safeAnswerCallback(context, callbackQuery.id, "Loading your repair tickets…");
+      const tickets = context.repairs ? await context.repairs(userId) : [];
+      const text = tickets.length
+        ? tickets.map((ticket, i) => `${i + 1}. ${ticket.reference_code} • ${ticket.status}\n${[ticket.device_brand, ticket.device_model].filter(Boolean).join(" ")}`).join("\n\n")
+        : "You don't have any Telegram repair tickets yet.";
+      await context.call("sendMessage", { chat_id: chatId, text: `🛠 Your repairs\n\n${text}` });
+      return;
+    }
+
+    if (data.startsWith("repair_status:")) {
+      await safeAnswerCallback(context, callbackQuery.id, "Checking repair status…");
+      const referenceCode = data.slice("repair_status:".length).toUpperCase();
+      const ticket = /^MRR-[A-F0-9]{10}$/.test(referenceCode) && context.repairStatus
+        ? await context.repairStatus(userId, referenceCode)
+        : null;
+      await context.call("sendMessage", {
+        chat_id: chatId,
+        text: ticket ? repairStatusText(ticket) : "I couldn't find that repair ticket for your Telegram account."
+      });
+      return;
+    }
+
+    if (data.startsWith("repair_approve:")) {
+      const referenceCode = data.slice("repair_approve:".length).toUpperCase();
+      const approved = /^MRR-[A-F0-9]{10}$/.test(referenceCode) && context.approveRepair
+        ? await context.approveRepair(userId, referenceCode)
+        : false;
+      await safeAnswerCallback(
+        context,
+        callbackQuery.id,
+        approved ? "Repair quote approved." : "This quote cannot be approved right now."
+      );
+      if (approved) {
+        await context.call("sendMessage", {
+          chat_id: chatId,
+          text: `✅ Repair quote approved\nReference: ${referenceCode}\n\nMr Mobiles can now continue the repair workflow.`
+        });
+      }
+      return;
+    }
+
     if (data === "human_support") {
       await safeAnswerCallback(context, callbackQuery.id, "Connecting you with Mr Mobiles support…");
       const name = [callbackQuery.from.first_name, callbackQuery.from.last_name]
