@@ -1,11 +1,14 @@
 import crypto from "node:crypto";
 
-export const BOT_WORKFLOW_VERSION = "2026-09-27.6";
+export const BOT_WORKFLOW_VERSION = "2026-09-27.7";
 export const BOT_COMMANDS = [
   { command: "start", description: "Welcome and open Mr Mobiles" },
+  { command: "menu", description: "Open the Mr Mobiles control menu" },
   { command: "ai", description: "Ask the Mr Mobiles AI assistant" },
   { command: "shop", description: "Browse phones and accessories" },
   { command: "repair", description: "Start repair help" },
+  { command: "repairs", description: "View your repair tickets" },
+  { command: "repairstatus", description: "Track a repair reference" },
   { command: "orders", description: "View your recent orders" },
   { command: "support", description: "Contact the Mr Mobiles team" },
   { command: "privacy", description: "AI chat and privacy information" },
@@ -42,6 +45,18 @@ export type RecentOrder = {
   amount_paise: number;
   status: string;
   workflow_status?: string;
+};
+
+export type RepairTicketSummary = {
+  reference_code: string;
+  device_brand?: string | null;
+  device_model: string;
+  issue_or_condition: string;
+  status: string;
+  quoted_amount_paise?: number | null;
+  status_note?: string | null;
+  created_at?: string;
+  updated_at?: string;
 };
 
 export type InlineProduct = {
@@ -81,7 +96,12 @@ export type BotContext = {
     onDraft?: (partial: string) => Promise<void>
   ) => Promise<AiAssistantReply>;
   handoff?: (userId: number, name: string) => Promise<boolean>;
-  repairIntake?: (userId: number, name: string, details: string) => Promise<boolean>;
+  repairIntake?: (userId: number, name: string, details: string) => Promise<{ referenceCode: string } | null>;
+  repairs?: (userId: number) => Promise<RepairTicketSummary[]>;
+  repairStatus?: (userId: number, referenceCode: string) => Promise<RepairTicketSummary | null>;
+  repairUpdate?: (referenceCode: string, status: string, note: string) => Promise<boolean>;
+  repairQuote?: (referenceCode: string, amountPaise: number, note: string) => Promise<boolean>;
+  approveRepair?: (userId: number, referenceCode: string) => Promise<boolean>;
   feedback?: (userId: number, responseId: number, rating: 1 | -1) => Promise<boolean>;
 };
 
@@ -158,6 +178,38 @@ function comparisonText(products: InlineProduct[]): string {
       product.subtitle
     ].filter(Boolean).join("\n");
   }).join("\n\n");
+}
+
+function repairStatusText(ticket: RepairTicketSummary): string {
+  const device = [ticket.device_brand, ticket.device_model].filter(Boolean).join(" ");
+  const quote = typeof ticket.quoted_amount_paise === "number"
+    ? `\nQuote: ${formatInr(ticket.quoted_amount_paise)}`
+    : "";
+  const note = ticket.status_note ? `\nNote: ${ticket.status_note}` : "";
+  return [
+    `🛠 Repair ${ticket.reference_code}`,
+    device || ticket.device_model,
+    `Issue: ${ticket.issue_or_condition}`,
+    `Status: ${ticket.status}${quote}${note}`
+  ].filter(Boolean).join("\n");
+}
+
+function homeKeyboard(context: BotContext) {
+  return {
+    inline_keyboard: [
+      [
+        { text: "🛍 Shop", web_app: { url: context.appUrl } },
+        { text: "🤖 AI Help", callback_data: "ai_help" }
+      ],
+      [
+        { text: "🧾 Orders", callback_data: "orders_latest" },
+        { text: "🛠 Repairs", callback_data: "repairs_latest" }
+      ],
+      [
+        { text: "👤 Human Support", callback_data: "human_support" }
+      ]
+    ]
+  };
 }
 
 async function safeAnswerCallback(context: BotContext, id: string, text?: string) {
