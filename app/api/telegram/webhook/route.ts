@@ -96,17 +96,26 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const callTelegram = async (method: string, body: Record<string, unknown>) => {
+      const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body), cache: "no-store", signal: AbortSignal.timeout(12000)
+      });
+      const data = await response.json();
+      if (!response.ok || data?.ok !== true) throw new TelegramError(Number(data?.error_code || response.status));
+      return data.result;
+    };
+
+    let botUsername: string | undefined;
+    if ((update as any)?.inline_query) {
+      const me = await callTelegram("getMe", {}) as any;
+      if (typeof me?.username === "string") botUsername = me.username;
+    }
+
     await handleBotUpdate(update, {
       ...settings(request),
-      async call(method, body) {
-        const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body), cache: "no-store", signal: AbortSignal.timeout(12000)
-        });
-        const data = await response.json();
-        if (!response.ok || data?.ok !== true) throw new TelegramError(Number(data?.error_code || response.status));
-        return data.result;
-      },
+      botUsername,
+      call: callTelegram,
       async orders(userId) {
         const { data, error } = await getSupabaseAdmin().from("orders")
           .select("id, amount_paise, status, workflow_status, created_at")
