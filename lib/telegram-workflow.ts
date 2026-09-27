@@ -490,20 +490,23 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
       .join(" ")
       .slice(0, 160);
     const details = text.slice(0, 1200);
-    const submitted = context.repairIntake
+    const ticket = context.repairIntake
       ? await context.repairIntake(userId, name || "Customer", details)
-      : false;
+      : null;
 
     const serviceUrl = new URL(context.appUrl);
     serviceUrl.searchParams.set("category", "service");
 
     await send({
-      text: submitted
-        ? `✅ Repair details received\n\nYour details:\n${details}\n\nMr Mobiles repair team can reply to you here. Final diagnosis and repair price will be confirmed after inspection.`
-        : `🛠️ Repair details understood\n\nYour details:\n${details}\n\nI couldn’t forward this to the repair team right now. Please tap Talk to Human or try again shortly.`,
+      text: ticket
+        ? `✅ Repair ticket created\nReference: ${ticket.referenceCode}\n\nYour details:\n${details}\n\nUse Track Repair anytime. Final diagnosis and repair price will be confirmed after inspection.`
+        : `🛠️ Repair details understood\n\nYour details:\n${details}\n\nI couldn’t create the repair ticket right now. Please tap Talk to Human or try again shortly.`,
       reply_markup: {
-        inline_keyboard: [
+        inline_keyboard: ticket ? [
+          [{ text: "📍 Track Repair", callback_data: `repair_status:${ticket.referenceCode}` }],
           [{ text: "🛠 Browse Repair Services", web_app: { url: serviceUrl.toString() } }],
+          [{ text: "👤 Talk to Human", callback_data: "human_support" }]
+        ] : [
           [{ text: "👤 Talk to Human", callback_data: "human_support" }]
         ]
       }
@@ -511,15 +514,10 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
     return;
   }
 
-  if (command === "/start") {
+  if (command === "/start" || command === "/menu") {
     await send({
-      text: "👋 Welcome to Mr Mobiles\n\nI’m your Mr Mobiles AI assistant. Ask naturally about phones, prices, stock, repairs or orders. I use live shop data where available, and human support is always one tap away.",
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: "🛍 Open Mr Mobiles", web_app: { url: context.appUrl } }],
-          [{ text: "🛠 Repair Help", callback_data: "repair_start" }, { text: "👤 Talk to Human", callback_data: "human_support" }]
-        ]
-      }
+      text: "👋 Welcome to Mr Mobiles\n\nAI shopping, live stock, orders, repairs and human support — all from this chat.",
+      reply_markup: homeKeyboard(context)
     });
   } else if (command === "/shop") {
     await send({ text: "📱 Browse Mr Mobiles phones and accessories:", reply_markup: keyboard("Browse Shop") });
@@ -535,6 +533,27 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
         ]
       }
     });
+  } else if (command === "/repairs") {
+    const tickets = context.repairs ? await context.repairs(userId) : [];
+    if (!tickets.length) {
+      await send({
+        text: "You don't have any Telegram repair tickets yet.",
+        reply_markup: { inline_keyboard: [[{ text: "🧰 Start Diagnosis", callback_data: "repair_start" }]] }
+      });
+      return;
+    }
+    const lines = tickets.map((ticket, i) =>
+      `${i + 1}. ${ticket.reference_code} • ${ticket.status}\n${[ticket.device_brand, ticket.device_model].filter(Boolean).join(" ")}`
+    );
+    await send({ text: `🛠 Your repair tickets\n\n${lines.join("\n\n")}\n\nUse /repairstatus REFERENCE for full details.` });
+  } else if (command === "/repairstatus") {
+    const referenceCode = argument.trim().toUpperCase();
+    if (!/^MRR-[A-F0-9]{10}$/.test(referenceCode)) {
+      await send({ text: "Usage: /repairstatus MRR-XXXXXXXXXX" });
+      return;
+    }
+    const ticket = context.repairStatus ? await context.repairStatus(userId, referenceCode) : null;
+    await send({ text: ticket ? repairStatusText(ticket) : "I couldn't find that repair ticket for your Telegram account." });
   } else if (command === "/id") {
     await send({ text: `Your Telegram user ID: ${userId}\nPrivate chat ID: ${chatId}` });
   } else if (command === "/privacy") {
@@ -543,7 +562,7 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
     });
   } else if (command === "/help") {
     const help = BOT_COMMANDS.map(c => `/${c.command} — ${c.description}`).join("\n");
-    await send({ text: `${help}\n\nYou can also just type a normal question to chat with the AI assistant.${isAdmin ? "\n\nAdmin reply: /reply CUSTOMER_ID your message" : ""}` });
+    await send({ text: `${help}\n\nYou can also just type a normal question to chat with the AI assistant.${isAdmin ? "\n\nAdmin tools:\n/reply CUSTOMER_ID message\n/repairupdate MRR-... STATUS note\n/repairquote MRR-... AMOUNT note" : ""}` });
   } else if (command === "/orders") {
     const orders = await context.orders(userId);
     if (!orders.length) {
@@ -556,6 +575,35 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
       return `${i + 1}. #${String(order.id).slice(0, 8)} • ${amount}\nPayment: ${order.status}${workflow}`;
     });
     await send({ text: `🧾 Your recent orders\n\n${lines.join("\n\n")}`, reply_markup: keyboard() });
+  } else if (command === "/repairupdate") {
+    if (!isAdmin) {
+      await send({ text: "This command is available to the Mr Mobiles support team." });
+      return;
+    }
+    const match = argument.match(/^(MRR-[A-F0-9]{10})\s+(received|reviewing|diagnosing|awaiting_approval|approved|repairing|ready|completed|rejected|cancelled)(?:\s+([\s\S]+))?$/i);
+    if (!match) {
+      await send({ text: "Usage: /repairupdate MRR-XXXXXXXXXX STATUS optional note" });
+      return;
+    }
+    const ok = context.repairUpdate
+      ? await context.repairUpdate(match[1].toUpperCase(), match[2].toLowerCase(), (match[3] || "").trim())
+      : false;
+    await send({ text: ok ? `✅ Repair ${match[1].toUpperCase()} updated to ${match[2].toLowerCase()}.` : "Repair update failed or the reference was not found." });
+  } else if (command === "/repairquote") {
+    if (!isAdmin) {
+      await send({ text: "This command is available to the Mr Mobiles support team." });
+      return;
+    }
+    const match = argument.match(/^(MRR-[A-F0-9]{10})\s+(\d{2,7})(?:\s+([\s\S]+))?$/i);
+    const rupees = Number(match?.[2]);
+    if (!match || !Number.isFinite(rupees) || rupees <= 0) {
+      await send({ text: "Usage: /repairquote MRR-XXXXXXXXXX AMOUNT optional note" });
+      return;
+    }
+    const ok = context.repairQuote
+      ? await context.repairQuote(match[1].toUpperCase(), Math.round(rupees * 100), (match[3] || "").trim())
+      : false;
+    await send({ text: ok ? `✅ Quote sent for ${match[1].toUpperCase()}: ${formatInr(Math.round(rupees * 100))}` : "Repair quote failed or the reference was not found." });
   } else if (command === "/reply") {
     if (!isAdmin) {
       await send({ text: "This command is available to the Mr Mobiles support team." });
