@@ -18,7 +18,7 @@ import urllib.request
 DEFAULT_BACKEND = "https://appmrmobiles.vercel.app"
 CONFIG_PATH = Path.home() / ".config" / "mr-mobiles" / "bot.json"
 TOKEN_PATTERN = re.compile(r"^[0-9]{5,16}:[A-Za-z0-9_-]{20,}$")
-WORKFLOW_VERSION = "2026-09-27.2"
+WORKFLOW_VERSION = "2026-09-27.4"
 
 
 class BotError(Exception):
@@ -213,13 +213,13 @@ def activate(config, path=CONFIG_PATH):
     save_private(path.with_name("before-activation.json"), snapshot)
     print(f"Configuring @{me['username']} with {app_origin}")
     telegram(config, "setMyName", {"name": "Mr Mobiles"})
-    telegram(config, "setMyDescription", {"description": "Shop phones and accessories, browse repair services, view your orders and contact Mr Mobiles support. Tap Open Mr Mobiles to get started."})
-    telegram(config, "setMyShortDescription", {"short_description": "Mr Mobiles | Phones, accessories, repair services and order support."})
+    telegram(config, "setMyDescription", {"description": "AI shopping assistant for phones, accessories, repairs, live product discovery, orders and Mr Mobiles support."})
+    telegram(config, "setMyShortDescription", {"short_description": "Mr Mobiles AI | Shop, repair, orders and human support."})
     telegram(config, "setMyCommands", {"commands": info["commands"]})
     telegram(config, "setChatMenuButton", {"menu_button": {"type": "web_app", "text": "Open Mr Mobiles", "web_app": {"url": info["miniAppUrl"]}}})
     telegram(config, "setWebhook", {
         "url": config["backend"] + "/api/telegram/webhook",
-        "secret_token": secret(config), "allowed_updates": ["message", "inline_query"],
+        "secret_token": secret(config), "allowed_updates": ["message", "inline_query", "callback_query"],
         "max_connections": 5, "drop_pending_updates": False
     })
     print("Command menu, profile, Mini App button and webhook configured.")

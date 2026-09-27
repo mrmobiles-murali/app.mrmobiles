@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { answerBusinessQuestion, aiRuntimeConfigured } from "@/lib/business-ai";
 import { searchInventoryProducts } from "@/lib/server-catalog";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { adminIds, BOT_COMMANDS, BOT_WORKFLOW_VERSION, derivedWebhookSecret, handleBotUpdate, matchesSecret, miniAppUrl } from "@/lib/telegram-workflow";
@@ -32,6 +33,11 @@ function status(request: NextRequest) {
     databaseConfigured: Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY),
     supportConfigured: Boolean(config.supportChatId && config.admins.length),
     inlineHandlerConfigured: true,
+    callbackHandlerConfigured: true,
+    aiConfigured: aiRuntimeConfigured(),
+    aiGateway: "vercel",
+    aiModel: process.env.MR_MOBILES_AI_MODEL || "openai/gpt-5.6-luna",
+    aiConversationMemory: true,
     inventorySource: "supabase",
     miniAppUrl: config.appUrl, commands: BOT_COMMANDS
   };
@@ -83,7 +89,7 @@ export async function POST(request: NextRequest) {
         body: JSON.stringify({
           url: webhookUrl.toString(),
           secret_token: secret,
-          allowed_updates: ["message", "inline_query"],
+          allowed_updates: ["message", "inline_query", "callback_query"],
           max_connections: 5,
           drop_pending_updates: false
         }),
@@ -112,10 +118,32 @@ export async function POST(request: NextRequest) {
       if (typeof me?.username === "string") botUsername = me.username;
     }
 
+    const config = settings(request);
+
     await handleBotUpdate(update, {
-      ...settings(request),
+      ...config,
       botUsername,
       call: callTelegram,
+      aiReply: answerBusinessQuestion,
+      async handoff(userId, name) {
+        if (!config.supportChatId || !config.admins.length) return false;
+        try {
+          await callTelegram("sendMessage", {
+            chat_id: config.supportChatId,
+            text: [
+              "👤 Human support requested",
+              `Name: ${name}`,
+              `Customer ID: ${userId}`,
+              "",
+              "Reply in your private chat with the bot:",
+              `/reply ${userId} your message`
+            ].join("\n")
+          });
+          return true;
+        } catch {
+          return false;
+        }
+      },
       async orders(userId) {
         const { data, error } = await getSupabaseAdmin().from("orders")
           .select("id, amount_paise, status, workflow_status, created_at")

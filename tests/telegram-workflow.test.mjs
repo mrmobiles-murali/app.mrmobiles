@@ -77,6 +77,66 @@ test("inline queries cap results at ten", async () => {
   await handleBotUpdate(inlineQuery("phone"), ctx);
   assert.equal(calls[0].body.results.length, 10);
 });
+
+test("ordinary text uses the AI assistant with typing feedback and smart actions", async () => {
+  let asked;
+  const { ctx, calls } = context({
+    aiReply: async (userId, text) => {
+      asked = { userId, text };
+      return {
+        text: "I found a live product match.",
+        usedModel: true,
+        products: [{
+          id: "iphone-13-pro-128",
+          name: "iPhone 13 Pro 128GB",
+          subtitle: "Pre-owned",
+          pricePaise: 5299900,
+          category: "phone",
+          emoji: "📱"
+        }]
+      };
+    }
+  });
+  await handleBotUpdate(message("iphone under 60k"), ctx);
+  assert.deepEqual(asked, { userId: 42, text: "iphone under 60k" });
+  assert.equal(calls[0].method, "sendChatAction");
+  assert.equal(calls[0].body.action, "typing");
+  assert.equal(calls[1].method, "sendMessage");
+  assert.match(calls[1].body.text, /Mr Mobiles AI/);
+  assert.equal(calls[1].body.reply_markup.inline_keyboard.at(-1)[1].callback_data, "human_support");
+});
+
+test("human support callback performs a one-tap handoff", async () => {
+  let handoff;
+  const { ctx, calls } = context({
+    handoff: async (userId, name) => {
+      handoff = { userId, name };
+      return true;
+    }
+  });
+  await handleBotUpdate({
+    update_id: 125,
+    callback_query: {
+      id: "cb-1",
+      from: { id: 42, first_name: "Customer" },
+      data: "human_support",
+      message: { chat: { id: 42, type: "private" } }
+    }
+  }, ctx);
+  assert.deepEqual(handoff, { userId: 42, name: "Customer" });
+  assert.equal(calls[0].method, "answerCallbackQuery");
+  assert.equal(calls[1].method, "sendMessage");
+  assert.match(calls[1].body.text, /Human support requested/);
+});
+
+test("privacy command does not expose secrets and warns against sensitive credentials", async () => {
+  const { ctx, calls } = context();
+  await handleBotUpdate(message("/privacy"), ctx);
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].body.text, /OTP/);
+  assert.match(calls[0].body.text, /Vercel AI Gateway/);
+});
+
 test("group updates never retrieve or publish customer orders", async () => {
   let queried = false;
   const { ctx, calls } = context({ orders: async () => { queried = true; return []; } });
