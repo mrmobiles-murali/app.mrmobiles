@@ -167,6 +167,7 @@ export default function Home() {
       else copy[productId] = next;
       return copy;
     });
+    window.Telegram?.WebApp.HapticFeedback?.selectionChanged();
   }
 
   async function placePendingOrder() {
@@ -264,6 +265,7 @@ export default function Home() {
   }
 
   async function checkout() {
+    window.Telegram?.WebApp.HapticFeedback?.impactOccurred("medium");
     if (!sessionReady) {
       setMessage("Secure Telegram session is not ready.");
       return;
@@ -307,7 +309,10 @@ export default function Home() {
           <button
             key={value}
             className={category === value ? "chip active" : "chip"}
-            onClick={() => setCategory(value as typeof category)}
+            onClick={() => {
+              setCategory(value as typeof category);
+              window.Telegram?.WebApp.HapticFeedback?.selectionChanged();
+            }}
           >
             {label}
           </button>
