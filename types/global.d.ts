@@ -23,7 +23,8 @@ declare global {
         showAlert(message: string): void;
         HapticFeedback?: {
           impactOccurred(style: "light" | "medium" | "heavy" | "rigid" | "soft"): void;
-          notificationOccurred(type: "error" | "success" | "warning"): void;\n          selectionChanged(): void;
+          notificationOccurred(type: "error" | "success" | "warning"): void;
+          selectionChanged(): void;
         };
       };
     };
