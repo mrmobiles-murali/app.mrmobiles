@@ -50,6 +50,7 @@ class ControlTests(unittest.TestCase):
         self.assertNotIn("sendMessage", methods)
         payload = next(payload for method, payload in calls if method == "setWebhook")
         self.assertFalse(payload["drop_pending_updates"])
+        self.assertEqual(payload["allowed_updates"], ["message", "inline_query"])
         self.assertEqual(payload["url"], CONFIG["backend"] + "/api/telegram/webhook")
         self.assertEqual(methods[-1], "setWebhook")
 
