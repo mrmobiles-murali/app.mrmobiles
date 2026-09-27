@@ -45,6 +45,8 @@ function status(request: NextRequest) {
     repairIntakeRouting: true,
     repairTicketLifecycle: true,
     repairQuoteApproval: true,
+    homeDashboard: true,
+    paymentLifecycleNotifications: true,
     inventorySource: "supabase",
     miniAppUrl: config.appUrl, commands: BOT_COMMANDS
   };
