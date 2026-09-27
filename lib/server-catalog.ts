@@ -105,11 +105,10 @@ export async function priceInventoryCart(items: Array<{ productId: string; qty: 
     if (!product) throw new Error("A product is unavailable or out of stock.");
 
     const requested = Math.max(1, Math.min(5, Math.floor(Number(item.qty) || 1)));
-    const qty = typeof product.stockQty === "number"
-      ? Math.min(requested, product.stockQty)
-      : requested;
-
-    if (qty < 1) throw new Error("A product is out of stock.");
+    if (typeof product.stockQty === "number" && requested > product.stockQty) {
+      throw new Error(`Only ${product.stockQty} unit(s) are currently available for ${product.name}.`);
+    }
+    const qty = requested;
 
     return {
       productId: product.id,
