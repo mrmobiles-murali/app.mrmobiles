@@ -3,6 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { catalog, type Product } from "@/lib/catalog";
 
+type StoreProduct = Product & {
+  brand?: string | null;
+  model?: string | null;
+  imageUrl?: string | null;
+  stockQty?: number | null;
+};
+
 type CartMap = Record<string, number>;
 
 function money(paise: number) {
@@ -15,6 +22,7 @@ function money(paise: number) {
 
 export default function Home() {
   const [cart, setCart] = useState<CartMap>({});
+  const [products, setProducts] = useState<StoreProduct[]>(catalog);
   const [category, setCategory] = useState<"all" | Product["category"]>("all");
   const [loading, setLoading] = useState(false);
   const [sessionReady, setSessionReady] = useState(false);
@@ -22,10 +30,34 @@ export default function Home() {
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    const requestedCategory = new URLSearchParams(window.location.search).get("category");
+    const params = new URLSearchParams(window.location.search);
+    const requestedCategory = params.get("category");
+    const requestedProduct = params.get("product");
+    const buyFromQuery = params.get("buy") === "1";
+
     if (requestedCategory === "phone" || requestedCategory === "accessory" || requestedCategory === "service") {
       setCategory(requestedCategory);
     }
+
+    fetch("/api/catalog")
+      .then((r) => r.json())
+      .then((data) => {
+        const liveProducts = Array.isArray(data) && data.length ? data as StoreProduct[] : catalog;
+        setProducts(liveProducts);
+
+        const selected = requestedProduct
+          ? liveProducts.find((product) => product.id === requestedProduct)
+          : undefined;
+        if (selected) {
+          setCategory(selected.category);
+          if (buyFromQuery) {
+            setCart((current) => ({ ...current, [selected.id]: 1 }));
+            setMessage(`${selected.name} added to your cart.`);
+          }
+        }
+      })
+      .catch(() => setProducts(catalog));
+
     fetch("/api/config")
       .then((r) => r.json())
       .then((data) => setPaymentsEnabled(Boolean(data?.paymentsEnabled)))
@@ -35,6 +67,28 @@ export default function Home() {
     if (!tg) {
       setMessage("Open this app from Telegram to place an order.");
       return;
+    }
+
+    const startParam = tg.initDataUnsafe?.start_param;
+    const deepLinkMatch = typeof startParam === "string"
+      ? startParam.match(/^(view|buy)_([A-Za-z0-9_-]{1,58})$/)
+      : null;
+    if (deepLinkMatch) {
+      const [, action, productId] = deepLinkMatch;
+      fetch("/api/catalog")
+        .then((r) => r.json())
+        .then((data) => {
+          const liveProducts = Array.isArray(data) && data.length ? data as StoreProduct[] : catalog;
+          setProducts(liveProducts);
+          const selected = liveProducts.find((product) => product.id === productId);
+          if (!selected) return;
+          setCategory(selected.category);
+          if (action === "buy") {
+            setCart((current) => ({ ...current, [selected.id]: 1 }));
+            setMessage(`${selected.name} added to your cart.`);
+          }
+        })
+        .catch(() => undefined);
     }
 
     tg.ready();
@@ -74,28 +128,40 @@ export default function Home() {
   }, []);
 
   const filtered = useMemo(
-    () => category === "all" ? catalog : catalog.filter((p) => p.category === category),
-    [category]
+    () => category === "all" ? products : products.filter((p) => p.category === category),
+    [category, products]
   );
 
   const total = useMemo(
-    () => catalog.reduce((sum, p) => sum + p.pricePaise * (cart[p.id] || 0), 0),
-    [cart]
+    () => products.reduce((sum, p) => sum + p.pricePaise * (cart[p.id] || 0), 0),
+    [cart, products]
   );
 
   const count = Object.values(cart).reduce((a, b) => a + b, 0);
 
+  function maxQty(productId: string) {
+    const product = products.find((item) => item.id === productId);
+    if (typeof product?.stockQty === "number") return Math.max(0, Math.min(5, product.stockQty));
+    return 5;
+  }
+
   function add(productId: string) {
+    const limit = maxQty(productId);
+    if (limit < 1) {
+      setMessage("This product is currently out of stock.");
+      return;
+    }
     setCart((current) => ({
       ...current,
-      [productId]: Math.min(5, (current[productId] || 0) + 1)
+      [productId]: Math.min(limit, (current[productId] || 0) + 1)
     }));
     window.Telegram?.WebApp.HapticFeedback?.impactOccurred("light");
   }
 
   function changeQty(productId: string, delta: number) {
+    const limit = maxQty(productId);
     setCart((current) => {
-      const next = Math.max(0, Math.min(5, (current[productId] || 0) + delta));
+      const next = Math.max(0, Math.min(limit, (current[productId] || 0) + delta));
       const copy = { ...current };
       if (next === 0) delete copy[productId];
       else copy[productId] = next;
@@ -257,7 +323,15 @@ export default function Home() {
               <div className="cardBody">
                 <span className="pill">{product.category}</span>
                 <h2>{product.name}</h2>
+                {(product.brand || product.model) && (
+                  <p>{[product.brand, product.model].filter(Boolean).join(" • ")}</p>
+                )}
                 <p>{product.subtitle}</p>
+                <p>
+                  {typeof product.stockQty === "number"
+                    ? `${product.stockQty} in stock`
+                    : "Stock confirmed before order"}
+                </p>
                 <div className="cardBottom">
                   <strong>{money(product.pricePaise)}</strong>
                   {qty === 0 ? (
