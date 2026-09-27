@@ -1,11 +1,11 @@
 import crypto from "node:crypto";
 
-export const BOT_WORKFLOW_VERSION = "2026-09-27.4";
+export const BOT_WORKFLOW_VERSION = "2026-09-27.5";
 export const BOT_COMMANDS = [
   { command: "start", description: "Welcome and open Mr Mobiles" },
   { command: "ai", description: "Ask the Mr Mobiles AI assistant" },
   { command: "shop", description: "Browse phones and accessories" },
-  { command: "repair", description: "Browse repair services" },
+  { command: "repair", description: "Start repair help" },
   { command: "orders", description: "View your recent orders" },
   { command: "support", description: "Contact the Mr Mobiles team" },
   { command: "privacy", description: "AI chat and privacy information" },
@@ -38,8 +38,12 @@ export function adminIds(value = ""): number[] {
 }
 
 export type RecentOrder = {
-  id: string; amount_paise: number; status: string; workflow_status?: string;
+  id: string;
+  amount_paise: number;
+  status: string;
+  workflow_status?: string;
 };
+
 export type InlineProduct = {
   id: string;
   name: string;
@@ -52,12 +56,16 @@ export type InlineProduct = {
   imageUrl?: string | null;
   stockQty?: number | null;
 };
+
 export type AiAssistantReply = {
   text: string;
   products: InlineProduct[];
   usedModel: boolean;
+  responseId?: number;
 };
+
 export type TelegramCall = (method: string, body: Record<string, unknown>) => Promise<unknown>;
+
 export type BotContext = {
   appUrl: string;
   admins: number[];
@@ -66,12 +74,27 @@ export type BotContext = {
   call: TelegramCall;
   orders: (userId: number) => Promise<RecentOrder[]>;
   searchProducts: (query: string) => Promise<InlineProduct[]>;
-  aiReply?: (userId: number, message: string) => Promise<AiAssistantReply>;
+  productsByIds?: (ids: string[]) => Promise<InlineProduct[]>;
+  aiReply?: (
+    userId: number,
+    message: string,
+    onDraft?: (partial: string) => Promise<void>
+  ) => Promise<AiAssistantReply>;
   handoff?: (userId: number, name: string) => Promise<boolean>;
+  feedback?: (userId: number, responseId: number, rating: 1 | -1) => Promise<boolean>;
 };
 
 function formatInr(paise: number): string {
-  return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(Number(paise) / 100);
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR"
+  }).format(Number(paise) / 100);
+}
+
+function stockLabel(product: InlineProduct): string {
+  return typeof product.stockQty === "number"
+    ? (product.stockQty > 0 ? `${product.stockQty} in stock` : "Out of stock")
+    : "Stock confirmation required";
 }
 
 function productWebAppUrl(appUrl: string, product: InlineProduct, buy = false) {
@@ -82,20 +105,69 @@ function productWebAppUrl(appUrl: string, product: InlineProduct, buy = false) {
   return url.toString();
 }
 
-function aiKeyboard(context: BotContext, products: InlineProduct[]) {
+function callbackData(prefix: string, value: string): string | null {
+  const data = `${prefix}${value}`;
+  return Buffer.byteLength(data, "utf8") <= 64 ? data : null;
+}
+
+function aiKeyboard(context: BotContext, products: InlineProduct[], responseId?: number) {
   const rows: Array<Array<Record<string, unknown>>> = [];
-  for (const product of products.slice(0, 2)) {
+  const visible = products.slice(0, 2);
+
+  for (const product of visible) {
     const shortName = product.name.length > 22 ? product.name.slice(0, 19) + "…" : product.name;
     rows.push([
       { text: `👀 ${shortName}`, web_app: { url: productWebAppUrl(context.appUrl, product) } },
       { text: "🛒 Buy", web_app: { url: productWebAppUrl(context.appUrl, product, true) } }
     ]);
+
+    const stock = callbackData("stock:", product.id);
+    if (stock) rows.push([{ text: "📦 Check Live Stock", callback_data: stock }]);
   }
+
+  if (visible.length >= 2) {
+    const compare = callbackData("compare:", `${visible[0].id}~${visible[1].id}`);
+    if (compare) rows.push([{ text: "⚖️ Compare These 2", callback_data: compare }]);
+  }
+
   rows.push([
-    { text: "🛍 Open Shop", web_app: { url: context.appUrl } },
+    { text: "🛠 Repair Help", callback_data: "repair_start" },
     { text: "👤 Talk to Human", callback_data: "human_support" }
   ]);
+
+  if (responseId && Number.isSafeInteger(responseId)) {
+    rows.push([
+      { text: "👍 Helpful", callback_data: `feedback:1:${responseId}` },
+      { text: "👎 Needs Work", callback_data: `feedback:-1:${responseId}` }
+    ]);
+  }
+
+  rows.push([{ text: "🛍 Open Shop", web_app: { url: context.appUrl } }]);
   return { inline_keyboard: rows };
+}
+
+function comparisonText(products: InlineProduct[]): string {
+  return products.slice(0, 2).map((product, index) => {
+    const identity = [product.brand, product.model].filter(Boolean).join(" • ");
+    return [
+      `${index + 1}. ${product.emoji} ${product.name}`,
+      identity,
+      `Price: ${formatInr(product.pricePaise)}`,
+      `Stock: ${stockLabel(product)}`,
+      product.subtitle
+    ].filter(Boolean).join("\n");
+  }).join("\n\n");
+}
+
+async function safeAnswerCallback(context: BotContext, id: string, text?: string) {
+  try {
+    await context.call("answerCallbackQuery", {
+      callback_query_id: id,
+      ...(text ? { text: text.slice(0, 180) } : {})
+    });
+  } catch {
+    // The requested action can still continue if the visual acknowledgement fails.
+  }
 }
 
 export async function handleBotUpdate(update: unknown, context: BotContext): Promise<void> {
@@ -109,15 +181,7 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
     const data = typeof callbackQuery.data === "string" ? callbackQuery.data : "";
 
     if (data === "human_support") {
-      try {
-        await context.call("answerCallbackQuery", {
-          callback_query_id: callbackQuery.id,
-          text: "Connecting you with Mr Mobiles support…"
-        });
-      } catch {
-        // The support handoff can still continue if the visual acknowledgement fails.
-      }
-
+      await safeAnswerCallback(context, callbackQuery.id, "Connecting you with Mr Mobiles support…");
       const name = [callbackQuery.from.first_name, callbackQuery.from.last_name]
         .filter((value) => typeof value === "string")
         .join(" ")
@@ -129,7 +193,67 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
           ? "✅ Human support requested. The Mr Mobiles team can reply to you here."
           : "Human chat handoff is temporarily unavailable. Please use /support followed by your question or email contact@mrmobiles.in."
       });
+      return;
     }
+
+    if (data === "repair_start") {
+      await safeAnswerCallback(context, callbackQuery.id, "Repair assistant ready");
+      await context.call("sendMessage", {
+        chat_id: chatId,
+        text: "🛠️ Repair Diagnosis\n\nReply with:\n• Brand\n• Exact model\n• Problem / damage\n\nExample: Samsung S23 — display cracked and touch not working.\n\nFinal diagnosis and price are confirmed after inspection.",
+        reply_markup: {
+          force_reply: true,
+          input_field_placeholder: "Brand + model + problem"
+        }
+      });
+      return;
+    }
+
+    if (data.startsWith("stock:")) {
+      await safeAnswerCallback(context, callbackQuery.id, "Checking live stock…");
+      const productId = data.slice("stock:".length);
+      const valid = /^[A-Za-z0-9_-]{1,56}$/.test(productId);
+      const products = valid && context.productsByIds ? await context.productsByIds([productId]) : [];
+      const product = products[0];
+      await context.call("sendMessage", {
+        chat_id: chatId,
+        text: product
+          ? `📦 ${product.name}\nPrice: ${formatInr(product.pricePaise)}\nStock: ${stockLabel(product)}`
+          : "That product is not currently available in the live Mr Mobiles catalog."
+      });
+      return;
+    }
+
+    if (data.startsWith("compare:")) {
+      await safeAnswerCallback(context, callbackQuery.id, "Preparing comparison…");
+      const ids = data.slice("compare:".length).split("~").filter(id => /^[A-Za-z0-9_-]{1,56}$/.test(id)).slice(0, 2);
+      const products = ids.length === 2 && context.productsByIds ? await context.productsByIds(ids) : [];
+      const ordered = ids.map(id => products.find(product => product.id === id)).filter(Boolean) as InlineProduct[];
+      await context.call("sendMessage", {
+        chat_id: chatId,
+        text: ordered.length === 2
+          ? `⚖️ Product Comparison\n\n${comparisonText(ordered)}\n\nThese are live catalog facts; condition-specific details are confirmed before ordering.`
+          : "I couldn’t load both products for comparison. Please search again and retry."
+      });
+      return;
+    }
+
+    const feedbackMatch = data.match(/^feedback:(1|-1):(\d+)$/);
+    if (feedbackMatch) {
+      const rating = Number(feedbackMatch[1]) as 1 | -1;
+      const responseId = Number(feedbackMatch[2]);
+      const saved = context.feedback && Number.isSafeInteger(responseId)
+        ? await context.feedback(userId, responseId, rating)
+        : false;
+      await safeAnswerCallback(
+        context,
+        callbackQuery.id,
+        saved ? "Thanks — feedback saved." : "Feedback couldn’t be saved right now."
+      );
+      return;
+    }
+
+    await safeAnswerCallback(context, callbackQuery.id);
     return;
   }
 
@@ -159,9 +283,7 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
       }
 
       const price = formatInr(product.pricePaise);
-      const stock = typeof product.stockQty === "number"
-        ? `${product.stockQty} in stock`
-        : "Confirm stock";
+      const stock = stockLabel(product);
       const identity = [product.brand, product.model].filter(Boolean).join(" • ");
       const cardUrl = product.imageUrl && /^https:\/\//i.test(product.imageUrl)
         ? product.imageUrl
@@ -201,6 +323,7 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
         }
       };
     });
+
     await context.call("answerInlineQuery", {
       inline_query_id: inlineQuery.id,
       results,
@@ -215,9 +338,9 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
   }
 
   const message = (update as any)?.message;
-  // Keep customer orders, AI history and admin tools out of groups.
   if (message?.chat?.type !== "private" || !Number.isSafeInteger(message?.chat?.id) ||
       !Number.isSafeInteger(message?.from?.id) || message.from.is_bot) return;
+
   const chatId = message.chat.id as number;
   const userId = message.from.id as number;
   const text = typeof message.text === "string" ? message.text.trim() : "";
@@ -233,23 +356,33 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
 
   if (command === "/start") {
     await send({
-      text: "👋 Welcome to Mr Mobiles\n\nI’m your Mr Mobiles AI assistant. Ask me naturally about phones, prices, stock, repairs or orders. I use live shop data where available, and you can switch to human support anytime.",
+      text: "👋 Welcome to Mr Mobiles\n\nI’m your Mr Mobiles AI assistant. Ask naturally about phones, prices, stock, repairs or orders. I use live shop data where available, and human support is always one tap away.",
       reply_markup: {
         inline_keyboard: [
           [{ text: "🛍 Open Mr Mobiles", web_app: { url: context.appUrl } }],
-          [{ text: "👤 Talk to Human", callback_data: "human_support" }]
+          [{ text: "🛠 Repair Help", callback_data: "repair_start" }, { text: "👤 Talk to Human", callback_data: "human_support" }]
         ]
       }
     });
   } else if (command === "/shop") {
     await send({ text: "📱 Browse Mr Mobiles phones and accessories:", reply_markup: keyboard("Browse Shop") });
   } else if (command === "/repair") {
-    await send({ text: "🛠️ Browse repair services. Final repair work and pricing are confirmed after diagnosis.", reply_markup: keyboard("Repair Services", "service") });
+    const serviceUrl = new URL(context.appUrl);
+    serviceUrl.searchParams.set("category", "service");
+    await send({
+      text: "🛠️ Repair Help\n\nStart a guided diagnosis here, or browse repair services in the Mini App. Final repair work and pricing are confirmed after inspection.",
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "🧰 Start Diagnosis", callback_data: "repair_start" }],
+          [{ text: "🛠 Browse Repair Services", web_app: { url: serviceUrl.toString() } }]
+        ]
+      }
+    });
   } else if (command === "/id") {
     await send({ text: `Your Telegram user ID: ${userId}\nPrivate chat ID: ${chatId}` });
   } else if (command === "/privacy") {
     await send({
-      text: "🔐 AI & privacy\n\nAI questions are processed by the configured AI provider through Vercel AI Gateway, and recent chat text is stored privately in the Mr Mobiles database to keep conversation context. Do not send passwords, OTPs, card numbers, CVVs, API keys or bot tokens. Payment verification and order data remain server-side."
+      text: "🔐 AI & privacy\n\nAI questions are processed through the configured AI provider, and recent chat text is stored privately in the Mr Mobiles database to keep conversation context. Do not send passwords, OTPs, card numbers, CVVs or private credentials. Payment verification and order data remain server-side."
     });
   } else if (command === "/help") {
     const help = BOT_COMMANDS.map(c => `/${c.command} — ${c.description}`).join("\n");
@@ -292,7 +425,10 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
       return;
     }
     if (!question) {
-      await send({ text: "Send /support followed by your question, or tap Talk to Human below.", reply_markup: { inline_keyboard: [[{ text: "👤 Talk to Human", callback_data: "human_support" }]] } });
+      await send({
+        text: "Send /support followed by your question, or tap Talk to Human below.",
+        reply_markup: { inline_keyboard: [[{ text: "👤 Talk to Human", callback_data: "human_support" }]] }
+      });
       return;
     }
     if (question.length > 2500) {
@@ -320,15 +456,46 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
       await send({ text: "The AI assistant is temporarily unavailable. Use /shop, /orders or /support.", reply_markup: keyboard() });
       return;
     }
+
+    const rawDraftId = Number((update as any)?.update_id);
+    const draftId = Number.isSafeInteger(rawDraftId) && rawDraftId !== 0
+      ? Math.abs(rawDraftId)
+      : Math.max(1, Date.now() % 2_000_000_000);
+    let liveDraft = true;
+
     try {
-      await context.call("sendChatAction", { chat_id: chatId, action: "typing" });
+      await context.call("sendMessageDraft", {
+        chat_id: chatId,
+        draft_id: draftId,
+        text: "",
+        can_stop: false
+      });
     } catch {
-      // Typing feedback is cosmetic; continue with the answer.
+      liveDraft = false;
+      try {
+        await context.call("sendChatAction", { chat_id: chatId, action: "typing" });
+      } catch {
+        // Cosmetic feedback only.
+      }
     }
-    const answer = await context.aiReply(userId, question);
+
+    const answer = await context.aiReply(userId, question, async (partial) => {
+      if (!liveDraft) return;
+      try {
+        await context.call("sendMessageDraft", {
+          chat_id: chatId,
+          draft_id: draftId,
+          text: partial ? `🤖 Mr Mobiles AI\n\n${partial}`.slice(0, 4096) : "",
+          can_stop: false
+        });
+      } catch {
+        liveDraft = false;
+      }
+    });
+
     await send({
       text: `🤖 Mr Mobiles AI\n\n${answer.text}`,
-      reply_markup: aiKeyboard(context, answer.products)
+      reply_markup: aiKeyboard(context, answer.products, answer.responseId)
     });
   } else if (!text) {
     await send({ text: "Send a text question, or use /help to see the available commands." });
