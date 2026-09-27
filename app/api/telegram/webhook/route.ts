@@ -41,6 +41,7 @@ function status(request: NextRequest) {
     liveDraftStreaming: true,
     compareActions: true,
     feedbackConfigured: true,
+    repairIntakeRouting: true,
     inventorySource: "supabase",
     miniAppUrl: config.appUrl, commands: BOT_COMMANDS
   };
@@ -137,6 +138,27 @@ export async function POST(request: NextRequest) {
               "👤 Human support requested",
               `Name: ${name}`,
               `Customer ID: ${userId}`,
+              "",
+              "Reply in your private chat with the bot:",
+              `/reply ${userId} your message`
+            ].join("\n")
+          });
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      async repairIntake(userId, name, details) {
+        if (!config.supportChatId || !config.admins.length) return false;
+        try {
+          await callTelegram("sendMessage", {
+            chat_id: config.supportChatId,
+            text: [
+              "🛠 Repair diagnosis request",
+              `Name: ${name}`,
+              `Customer ID: ${userId}`,
+              "",
+              details,
               "",
               "Reply in your private chat with the bot:",
               `/reply ${userId} your message`

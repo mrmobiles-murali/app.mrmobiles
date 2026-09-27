@@ -163,6 +163,51 @@ test("repair callback starts a guided force-reply flow", async () => {
   assert.match(calls[1].body.text, /Exact model/);
 });
 
+test("guided repair reply bypasses generic AI and forwards the exact details", async () => {
+  let forwarded;
+  let aiCalled = false;
+  const { ctx, calls } = context({
+    repairIntake: async (userId, name, details) => {
+      forwarded = { userId, name, details };
+      return true;
+    },
+    aiReply: async () => {
+      aiCalled = true;
+      return { text: "wrong route", usedModel: true, products: [] };
+    }
+  });
+  await handleBotUpdate(message(
+    "Samsung S23 - display cracked and touch not working",
+    { reply_to_message: { text: "🛠️ Repair Diagnosis\n\nReply with:\n• Brand\n• Exact model\n• Problem / damage" } }
+  ), ctx);
+  assert.equal(aiCalled, false);
+  assert.deepEqual(forwarded, {
+    userId: 42,
+    name: "Customer",
+    details: "Samsung S23 - display cracked and touch not working"
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].method, "sendMessage");
+  assert.match(calls[0].body.text, /Repair details received/);
+  assert.match(calls[0].body.text, /Samsung S23/);
+});
+
+test("guided repair reply asks for more detail when input is too short", async () => {
+  let forwarded = false;
+  const { ctx, calls } = context({
+    repairIntake: async () => {
+      forwarded = true;
+      return true;
+    }
+  });
+  await handleBotUpdate(message("S23", {
+    reply_to_message: { text: "🛠️ Repair Diagnosis\n\nReply with:" }
+  }), ctx);
+  assert.equal(forwarded, false);
+  assert.equal(calls[0].body.reply_markup.force_reply, true);
+  assert.match(calls[0].body.text, /brand, exact model and the problem/i);
+});
+
 test("feedback callback saves rating for authenticated Telegram user", async () => {
   let saved;
   const { ctx, calls } = context({
