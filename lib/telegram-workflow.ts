@@ -226,9 +226,9 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
 
     if (data.startsWith("compare:")) {
       await safeAnswerCallback(context, callbackQuery.id, "Preparing comparison…");
-      const ids = data.slice("compare:".length).split("~").filter(id => /^[A-Za-z0-9_-]{1,56}$/.test(id)).slice(0, 2);
+      const ids = data.slice("compare:".length).split("~").filter((id: string) => /^[A-Za-z0-9_-]{1,56}$/.test(id)).slice(0, 2);
       const products = ids.length === 2 && context.productsByIds ? await context.productsByIds(ids) : [];
-      const ordered = ids.map(id => products.find(product => product.id === id)).filter(Boolean) as InlineProduct[];
+      const ordered = ids.map((id: string) => products.find((product: InlineProduct) => product.id === id)).filter(Boolean) as InlineProduct[];
       await context.call("sendMessage", {
         chat_id: chatId,
         text: ordered.length === 2
