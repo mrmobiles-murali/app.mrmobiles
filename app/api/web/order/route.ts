@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { priceCart } from "@/lib/catalog";
+import { priceInventoryCart } from "@/lib/server-catalog";
 import { createRazorpayOrder } from "@/lib/razorpay";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import {
@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
     if (customerName.length < 2) throw new Error("Enter your name.");
     if (deliveryAddress.length < 8) throw new Error("Enter a complete delivery or pickup address.");
 
-    const priced = priceCart(cart);
+    const priced = await priceInventoryCart(cart);
     const trackingCode = generateReference("MRO");
     const supabase = getSupabaseAdmin();
 
