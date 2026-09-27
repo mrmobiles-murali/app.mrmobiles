@@ -18,7 +18,7 @@ import urllib.request
 DEFAULT_BACKEND = "https://appmrmobiles.vercel.app"
 CONFIG_PATH = Path.home() / ".config" / "mr-mobiles" / "bot.json"
 TOKEN_PATTERN = re.compile(r"^[0-9]{5,16}:[A-Za-z0-9_-]{20,}$")
-WORKFLOW_VERSION = "2026-09-26.1"
+WORKFLOW_VERSION = "2026-09-27.2"
 
 
 class BotError(Exception):
@@ -219,7 +219,7 @@ def activate(config, path=CONFIG_PATH):
     telegram(config, "setChatMenuButton", {"menu_button": {"type": "web_app", "text": "Open Mr Mobiles", "web_app": {"url": info["miniAppUrl"]}}})
     telegram(config, "setWebhook", {
         "url": config["backend"] + "/api/telegram/webhook",
-        "secret_token": secret(config), "allowed_updates": ["message"],
+        "secret_token": secret(config), "allowed_updates": ["message", "inline_query"],
         "max_connections": 5, "drop_pending_updates": False
     })
     print("Command menu, profile, Mini App button and webhook configured.")
