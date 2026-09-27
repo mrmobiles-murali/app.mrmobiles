@@ -47,6 +47,7 @@ function status(request: NextRequest) {
     repairQuoteApproval: true,
     homeDashboard: true,
     paymentLifecycleNotifications: true,
+    profileSelfHeal: true,
     inventorySource: "supabase",
     miniAppUrl: config.appUrl, commands: BOT_COMMANDS
   };
@@ -128,6 +129,28 @@ export async function POST(request: NextRequest) {
     }
 
     const config = settings(request);
+
+    if (incomingCommand === "/start") {
+      try {
+        await callTelegram("setMyName", { name: "Mr Mobiles" });
+        await callTelegram("setMyDescription", {
+          description: "AI shopping assistant for phones, live stock, repair tickets, orders, payments and Mr Mobiles support."
+        });
+        await callTelegram("setMyShortDescription", {
+          short_description: "Mr Mobiles AI | Shop, repair, track and get support."
+        });
+        await callTelegram("setMyCommands", { commands: BOT_COMMANDS });
+        await callTelegram("setChatMenuButton", {
+          menu_button: {
+            type: "web_app",
+            text: "Open Mr Mobiles",
+            web_app: { url: config.appUrl }
+          }
+        });
+      } catch {
+        // Customer chat must continue even if Telegram profile synchronization is temporarily unavailable.
+      }
+    }
 
     await handleBotUpdate(update, {
       ...config,
