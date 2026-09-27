@@ -18,7 +18,7 @@ import urllib.request
 DEFAULT_BACKEND = "https://appmrmobiles.vercel.app"
 CONFIG_PATH = Path.home() / ".config" / "mr-mobiles" / "bot.json"
 TOKEN_PATTERN = re.compile(r"^[0-9]{5,16}:[A-Za-z0-9_-]{20,}$")
-WORKFLOW_VERSION = "2026-09-27.7"
+WORKFLOW_VERSION = "2026-09-27.8"
 
 
 class BotError(Exception):
