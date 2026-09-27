@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 
-export const BOT_WORKFLOW_VERSION = "2026-09-26.1";
+export const BOT_WORKFLOW_VERSION = "2026-09-27.1";
 export const BOT_COMMANDS = [
   { command: "start", description: "Welcome and open Mr Mobiles" },
   { command: "shop", description: "Browse phones and accessories" },
@@ -38,6 +38,14 @@ export function adminIds(value = ""): number[] {
 export type RecentOrder = {
   id: string; amount_paise: number; status: string; workflow_status?: string;
 };
+export type InlineProduct = {
+  id: string;
+  name: string;
+  subtitle: string;
+  pricePaise: number;
+  category: "phone" | "accessory" | "service";
+  emoji: string;
+};
 export type TelegramCall = (method: string, body: Record<string, unknown>) => Promise<unknown>;
 export type BotContext = {
   appUrl: string;
@@ -45,9 +53,45 @@ export type BotContext = {
   supportChatId?: number;
   call: TelegramCall;
   orders: (userId: number) => Promise<RecentOrder[]>;
+  searchProducts: (query: string) => Promise<InlineProduct[]>;
 };
 
+function formatInr(paise: number): string {
+  return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(Number(paise) / 100);
+}
+
 export async function handleBotUpdate(update: unknown, context: BotContext): Promise<void> {
+  const inlineQuery = (update as any)?.inline_query;
+  if (inlineQuery && typeof inlineQuery.id === "string" &&
+      Number.isSafeInteger(inlineQuery?.from?.id) && !inlineQuery?.from?.is_bot) {
+    const query = typeof inlineQuery.query === "string" ? inlineQuery.query.trim().slice(0, 100) : "";
+    const products = (await context.searchProducts(query)).slice(0, 10);
+    const results = products.map((product) => {
+      const url = new URL(context.appUrl);
+      url.searchParams.set("category", product.category);
+      const price = formatInr(product.pricePaise);
+      return {
+        type: "article",
+        id: `product:${product.id}`,
+        title: `${product.emoji} ${product.name}`,
+        description: `${price} • ${product.subtitle}`.slice(0, 256),
+        input_message_content: {
+          message_text: `${product.emoji} ${product.name}\n${product.subtitle}\nPrice: ${price}\n\nMr Mobiles`
+        },
+        reply_markup: {
+          inline_keyboard: [[{ text: "View in Mr Mobiles", url: url.toString() }]]
+        }
+      };
+    });
+    await context.call("answerInlineQuery", {
+      inline_query_id: inlineQuery.id,
+      results,
+      cache_time: 15,
+      is_personal: true
+    });
+    return;
+  }
+
   const message = (update as any)?.message;
   // Keep customer orders and admin tools out of groups.
   if (message?.chat?.type !== "private" || !Number.isSafeInteger(message?.chat?.id) ||
@@ -82,7 +126,7 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
       return;
     }
     const lines = orders.slice(0, 5).map((order, i) => {
-      const amount = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(Number(order.amount_paise) / 100);
+      const amount = formatInr(order.amount_paise);
       const workflow = order.workflow_status ? ` • ${order.workflow_status}` : "";
       return `${i + 1}. #${String(order.id).slice(0, 8)} • ${amount}\nPayment: ${order.status}${workflow}`;
     });
