@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 
-export const BOT_WORKFLOW_VERSION = "2026-09-27.7";
+export const BOT_WORKFLOW_VERSION = "2026-09-27.8";
 export const BOT_COMMANDS = [
   { command: "start", description: "Welcome and open Mr Mobiles" },
   { command: "menu", description: "Open the Mr Mobiles control menu" },
