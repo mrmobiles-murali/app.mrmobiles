@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { answerBusinessQuestion, aiRuntimeConfigured } from "@/lib/business-ai";
-import { searchInventoryProducts } from "@/lib/server-catalog";
+import { getInventoryProductsByIds, searchInventoryProducts } from "@/lib/server-catalog";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { adminIds, BOT_COMMANDS, BOT_WORKFLOW_VERSION, derivedWebhookSecret, handleBotUpdate, matchesSecret, miniAppUrl } from "@/lib/telegram-workflow";
 
@@ -38,6 +38,9 @@ function status(request: NextRequest) {
     aiGateway: "vercel",
     aiModel: process.env.MR_MOBILES_AI_MODEL || "openai/gpt-5.6-luna",
     aiConversationMemory: true,
+    liveDraftStreaming: true,
+    compareActions: true,
+    feedbackConfigured: true,
     inventorySource: "supabase",
     miniAppUrl: config.appUrl, commands: BOT_COMMANDS
   };
@@ -153,6 +156,22 @@ export async function POST(request: NextRequest) {
       },
       async searchProducts(query) {
         return searchInventoryProducts(query);
+      },
+      async productsByIds(ids) {
+        return getInventoryProductsByIds(ids);
+      },
+      async feedback(userId, responseId, rating) {
+        const { error } = await getSupabaseAdmin()
+          .from("ai_feedback")
+          .upsert({
+            assistant_message_id: responseId,
+            telegram_user_id: userId,
+            rating,
+            updated_at: new Date().toISOString()
+          }, {
+            onConflict: "assistant_message_id,telegram_user_id"
+          });
+        return !error;
       }
     });
 

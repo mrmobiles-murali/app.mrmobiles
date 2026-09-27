@@ -72,6 +72,21 @@ export async function listInventoryProducts(options: { allowFallback?: boolean }
   }
 }
 
+
+export async function getInventoryProductsByIds(ids: string[]): Promise<InventoryProduct[]> {
+  const unique = [...new Set(ids.filter(id => /^[A-Za-z0-9_-]{1,64}$/.test(id)))].slice(0, 10);
+  if (!unique.length) return [];
+
+  const { data, error } = await getSupabaseAdmin()
+    .from("products")
+    .select("id,name,brand,model,subtitle,price_paise,category,emoji,image_url,stock_qty,active,search_aliases")
+    .in("id", unique)
+    .eq("active", true);
+
+  if (error) throw new Error("Inventory lookup failed.");
+  return (data || []).map((row) => mapRow(row as ProductRow));
+}
+
 export async function searchInventoryProducts(query: string): Promise<InventoryProduct[]> {
   const products = await listInventoryProducts({ allowFallback: true });
   const terms = query.toLowerCase().split(/\s+/).map((term) => term.trim()).filter(Boolean);
