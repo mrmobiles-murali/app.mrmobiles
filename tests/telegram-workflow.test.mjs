@@ -5,11 +5,16 @@ import { handleBotUpdate, derivedWebhookSecret, matchesSecret, miniAppUrl, admin
 function message(text, extra = {}) {
   return { update_id: 123, message: { chat: { id: 42, type: "private" }, from: { id: 42, first_name: "Customer" }, text, ...extra } };
 }
+function inlineQuery(query = "iphone") {
+  return { update_id: 124, inline_query: { id: "inline-1", from: { id: 42, first_name: "Customer" }, query, offset: "" } };
+}
 function context(overrides = {}) {
   const calls = [];
   const ctx = { appUrl: "https://mrmobiles.in/", admins: [99], supportChatId: 99,
     call: async (method, body) => { calls.push({ method, body }); return {}; },
-    orders: async () => [], ...overrides };
+    orders: async () => [],
+    searchProducts: async () => [],
+    ...overrides };
   return { ctx, calls };
 }
 test("webhook credentials reject missing, wrong and different-length values", () => {
@@ -24,6 +29,45 @@ test("URL selection uses configured domain and rejects plaintext/credential URLs
   assert.equal(miniAppUrl("https://example.com", "https://mrmobiles.in"), "https://mrmobiles.in/");
   assert.throws(() => miniAppUrl("https://example.com", "http://mrmobiles.in"));
   assert.throws(() => miniAppUrl("https://example.com", "https://secret@example.com"));
+});
+test("inline queries return personal product results without a web_app button", async () => {
+  let searched;
+  const { ctx, calls } = context({
+    searchProducts: async query => {
+      searched = query;
+      return [{
+        id: "iphone-13-pro-128",
+        name: "iPhone 13 Pro 128GB",
+        subtitle: "Pre-owned",
+        pricePaise: 5299900,
+        category: "phone",
+        emoji: "📱"
+      }];
+    }
+  });
+  await handleBotUpdate(inlineQuery("  iPhone  "), ctx);
+  assert.equal(searched, "iPhone");
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].method, "answerInlineQuery");
+  assert.equal(calls[0].body.inline_query_id, "inline-1");
+  assert.equal(calls[0].body.is_personal, true);
+  assert.equal(calls[0].body.results.length, 1);
+  assert.match(calls[0].body.results[0].title, /iPhone 13 Pro/);
+  assert.equal(calls[0].body.results[0].reply_markup.inline_keyboard[0][0].web_app, undefined);
+  assert.match(calls[0].body.results[0].reply_markup.inline_keyboard[0][0].url, /^https:\/\/mrmobiles\.in\//);
+});
+test("inline queries cap results at ten", async () => {
+  const products = Array.from({ length: 15 }, (_, i) => ({
+    id: `p-${i}`,
+    name: `Phone ${i}`,
+    subtitle: "Test",
+    pricePaise: 10000 + i,
+    category: "phone",
+    emoji: "📱"
+  }));
+  const { ctx, calls } = context({ searchProducts: async () => products });
+  await handleBotUpdate(inlineQuery("phone"), ctx);
+  assert.equal(calls[0].body.results.length, 10);
 });
 test("group updates never retrieve or publish customer orders", async () => {
   let queried = false;
