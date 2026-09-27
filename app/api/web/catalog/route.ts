@@ -1,4 +1,4 @@
-import { catalog } from "@/lib/catalog";
+import { listInventoryProducts } from "@/lib/server-catalog";
 import { webJson, webOptions } from "@/lib/web-automation";
 
 export function OPTIONS() {
@@ -6,17 +6,22 @@ export function OPTIONS() {
 }
 
 export async function GET() {
+  const products = await listInventoryProducts({ allowFallback: true });
   return webJson({
     ok: true,
-    products: catalog
+    products: products
       .filter((item) => item.category !== "service")
       .map((item) => ({
         id: item.id,
         name: item.name,
+        brand: item.brand || null,
+        model: item.model || null,
         subtitle: item.subtitle,
         pricePaise: item.pricePaise,
         category: item.category,
-        emoji: item.emoji
+        emoji: item.emoji,
+        imageUrl: item.imageUrl || null,
+        stockQty: item.stockQty ?? null
       }))
   });
 }
