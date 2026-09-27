@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
           .from("orders")
           .update({
             status: "paid",
-            workflow_status: order.source === "web" ? "confirmed" : "new",
+            workflow_status: "confirmed",
             razorpay_payment_id: paymentId || order.razorpay_payment_id,
             paid_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
         if (order.telegram_user_id) {
           await sendTelegramMessage(
             Number(order.telegram_user_id),
-            `✅ <b>Payment received</b>\nOrder: <code>${order.id}</code>${paymentId ? `\nPayment: <code>${paymentId}</code>` : ""}\n\nThank you for choosing Mr Mobiles.`
+            `✅ <b>Payment received</b>\nOrder: <code>${order.id}</code>${paymentId ? `\nPayment: <code>${paymentId}</code>` : ""}\nStatus: confirmed\n\nUse /orders anytime to check your order. Thank you for choosing Mr Mobiles.`
           );
         }
       }
@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
         .from("orders")
         .update({
           status: "payment_failed",
-          workflow_status: order.source === "web" ? "payment_issue" : "new",
+          workflow_status: "payment_issue",
           updated_at: new Date().toISOString()
         })
         .eq("id", order.id);
@@ -89,6 +89,17 @@ export async function POST(request: NextRequest) {
           status: "payment_issue",
           message: "Payment failed. Please try again or contact Mr Mobiles."
         });
+      }
+
+      if (order.telegram_user_id) {
+        try {
+          await sendTelegramMessage(
+            Number(order.telegram_user_id),
+            `⚠️ <b>Payment not completed</b>\nOrder: <code>${order.id}</code>\nStatus: payment issue\n\nYou can retry checkout or use /support if you need help. No order is marked paid until server verification succeeds.`
+          );
+        } catch {
+          // Payment state is already stored; notification delivery is best effort.
+        }
       }
     }
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { answerBusinessQuestion, aiRuntimeConfigured } from "@/lib/business-ai";
 import { getInventoryProductsByIds, searchInventoryProducts } from "@/lib/server-catalog";
+import { approveRepairQuote, createTelegramRepairTicket, getTelegramRepairTicket, listTelegramRepairTickets, REPAIR_STATUSES, updateRepairTicket } from "@/lib/repair-tickets";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { adminIds, BOT_COMMANDS, BOT_WORKFLOW_VERSION, derivedWebhookSecret, handleBotUpdate, matchesSecret, miniAppUrl } from "@/lib/telegram-workflow";
 
@@ -42,6 +43,10 @@ function status(request: NextRequest) {
     compareActions: true,
     feedbackConfigured: true,
     repairIntakeRouting: true,
+    repairTicketLifecycle: true,
+    repairQuoteApproval: true,
+    homeDashboard: true,
+    paymentLifecycleNotifications: true,
     inventorySource: "supabase",
     miniAppUrl: config.appUrl, commands: BOT_COMMANDS
   };
@@ -149,25 +154,131 @@ export async function POST(request: NextRequest) {
         }
       },
       async repairIntake(userId, name, details) {
-        if (!config.supportChatId || !config.admins.length) return false;
         try {
-          await callTelegram("sendMessage", {
-            chat_id: config.supportChatId,
-            text: [
-              "🛠 Repair diagnosis request",
-              `Name: ${name}`,
-              `Customer ID: ${userId}`,
-              "",
-              details,
-              "",
-              "Reply in your private chat with the bot:",
-              `/reply ${userId} your message`
-            ].join("\n")
+          const ticket = await createTelegramRepairTicket({
+            telegramUserId: userId,
+            customerName: name,
+            details
           });
-          return true;
+
+          if (config.supportChatId && config.admins.length) {
+            try {
+              await callTelegram("sendMessage", {
+                chat_id: config.supportChatId,
+                text: [
+                  "🛠 New repair ticket",
+                  `Reference: ${ticket.reference_code}`,
+                  `Name: ${name}`,
+                  `Customer ID: ${userId}`,
+                  `Device: ${[ticket.device_brand, ticket.device_model].filter(Boolean).join(" ")}`,
+                  `Issue: ${ticket.issue_or_condition}`,
+                  "",
+                  "Admin tools:",
+                  `/repairupdate ${ticket.reference_code} diagnosing Device inspection started`,
+                  `/repairquote ${ticket.reference_code} 2500 Display replacement quote`,
+                  "",
+                  "Reply directly:",
+                  `/reply ${userId} your message`
+                ].join("\n")
+              });
+            } catch {
+              // Ticket remains valid even if the admin notification is temporarily unavailable.
+            }
+          }
+
+          return { referenceCode: ticket.reference_code };
         } catch {
-          return false;
+          return null;
         }
+      },
+      async repairs(userId) {
+        return listTelegramRepairTickets(userId);
+      },
+      async repairStatus(userId, referenceCode) {
+        return getTelegramRepairTicket(userId, referenceCode);
+      },
+      async repairUpdate(referenceCode, status, note) {
+        if (!REPAIR_STATUSES.includes(status as any)) return false;
+        const ticket = await updateRepairTicket({
+          referenceCode,
+          status: status as any,
+          note
+        });
+        if (!ticket) return false;
+
+        if (ticket.telegram_user_id) {
+          try {
+            await callTelegram("sendMessage", {
+              chat_id: Number(ticket.telegram_user_id),
+              text: [
+                "🛠 Repair status updated",
+                `Reference: ${ticket.reference_code}`,
+                `Status: ${ticket.status}`,
+                ticket.status_note ? `Note: ${ticket.status_note}` : ""
+              ].filter(Boolean).join("\n")
+            });
+          } catch {
+            // The database state is authoritative even if notification delivery fails.
+          }
+        }
+        return true;
+      },
+      async repairQuote(referenceCode, amountPaise, note) {
+        const ticket = await updateRepairTicket({
+          referenceCode,
+          status: "awaiting_approval",
+          note: note || "Repair quote is ready for customer approval.",
+          quotedAmountPaise: amountPaise
+        });
+        if (!ticket) return false;
+
+        if (ticket.telegram_user_id) {
+          try {
+            await callTelegram("sendMessage", {
+              chat_id: Number(ticket.telegram_user_id),
+              text: [
+                "💰 Repair quote ready",
+                `Reference: ${ticket.reference_code}`,
+                `Quote: ${new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(amountPaise / 100)}`,
+                ticket.status_note ? `Note: ${ticket.status_note}` : "",
+                "",
+                "Approve only if you want Mr Mobiles to proceed."
+              ].filter(Boolean).join("\n"),
+              reply_markup: {
+                inline_keyboard: [[
+                  { text: "✅ Approve Quote", callback_data: `repair_approve:${ticket.reference_code}` },
+                  { text: "👤 Talk to Human", callback_data: "human_support" }
+                ]]
+              }
+            });
+          } catch {
+            // Quote remains stored even if notification delivery fails.
+          }
+        }
+        return true;
+      },
+      async approveRepair(userId, referenceCode) {
+        const ticket = await approveRepairQuote(userId, referenceCode);
+        if (!ticket) return false;
+
+        if (config.supportChatId && config.admins.length) {
+          try {
+            await callTelegram("sendMessage", {
+              chat_id: config.supportChatId,
+              text: [
+                "✅ Repair quote approved",
+                `Reference: ${ticket.reference_code}`,
+                `Customer ID: ${userId}`,
+                "Status: approved",
+                "",
+                `/repairupdate ${ticket.reference_code} repairing Repair work started`
+              ].join("\n")
+            });
+          } catch {
+            // Approval is already stored.
+          }
+        }
+        return true;
       },
       async orders(userId) {
         const { data, error } = await getSupabaseAdmin().from("orders")
