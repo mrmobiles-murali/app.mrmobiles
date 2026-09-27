@@ -77,6 +77,35 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(status(request));
     }
 
+    // Self-heal the Telegram webhook subscription after a signed /start update.
+    // This is idempotent, preserves pending updates and never exposes the bot token.
+    const incomingText = typeof (update as any)?.message?.text === "string"
+      ? (update as any).message.text.trim()
+      : "";
+    const incomingCommand = incomingText.split(/\s+/)[0]?.split("@")[0]?.toLowerCase();
+    if (incomingCommand === "/start") {
+      const webhookUrl = new URL(request.url);
+      webhookUrl.search = "";
+      webhookUrl.hash = "";
+      const response = await fetch(`https://api.telegram.org/bot${token}/setWebhook`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: webhookUrl.toString(),
+          secret_token: secret,
+          allowed_updates: ["message", "inline_query"],
+          max_connections: 5,
+          drop_pending_updates: false
+        }),
+        cache: "no-store",
+        signal: AbortSignal.timeout(12000)
+      });
+      const data = await response.json();
+      if (!response.ok || data?.ok !== true) {
+        throw new TelegramError(Number(data?.error_code || response.status));
+      }
+    }
+
     await handleBotUpdate(update, {
       ...settings(request),
       async call(method, body) {
