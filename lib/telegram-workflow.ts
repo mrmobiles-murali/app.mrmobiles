@@ -1,12 +1,14 @@
 import crypto from "node:crypto";
 
-export const BOT_WORKFLOW_VERSION = "2026-09-27.3";
+export const BOT_WORKFLOW_VERSION = "2026-09-27.4";
 export const BOT_COMMANDS = [
   { command: "start", description: "Welcome and open Mr Mobiles" },
+  { command: "ai", description: "Ask the Mr Mobiles AI assistant" },
   { command: "shop", description: "Browse phones and accessories" },
   { command: "repair", description: "Browse repair services" },
   { command: "orders", description: "View your recent orders" },
   { command: "support", description: "Contact the Mr Mobiles team" },
+  { command: "privacy", description: "AI chat and privacy information" },
   { command: "help", description: "See how to use this bot" },
   { command: "id", description: "Show your Telegram user ID" }
 ];
@@ -50,6 +52,11 @@ export type InlineProduct = {
   imageUrl?: string | null;
   stockQty?: number | null;
 };
+export type AiAssistantReply = {
+  text: string;
+  products: InlineProduct[];
+  usedModel: boolean;
+};
 export type TelegramCall = (method: string, body: Record<string, unknown>) => Promise<unknown>;
 export type BotContext = {
   appUrl: string;
@@ -59,13 +66,73 @@ export type BotContext = {
   call: TelegramCall;
   orders: (userId: number) => Promise<RecentOrder[]>;
   searchProducts: (query: string) => Promise<InlineProduct[]>;
+  aiReply?: (userId: number, message: string) => Promise<AiAssistantReply>;
+  handoff?: (userId: number, name: string) => Promise<boolean>;
 };
 
 function formatInr(paise: number): string {
   return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(Number(paise) / 100);
 }
 
+function productWebAppUrl(appUrl: string, product: InlineProduct, buy = false) {
+  const url = new URL(appUrl);
+  url.searchParams.set("category", product.category);
+  url.searchParams.set("product", product.id);
+  if (buy) url.searchParams.set("buy", "1");
+  return url.toString();
+}
+
+function aiKeyboard(context: BotContext, products: InlineProduct[]) {
+  const rows: Array<Array<Record<string, unknown>>> = [];
+  for (const product of products.slice(0, 2)) {
+    const shortName = product.name.length > 22 ? product.name.slice(0, 19) + "…" : product.name;
+    rows.push([
+      { text: `👀 ${shortName}`, web_app: { url: productWebAppUrl(context.appUrl, product) } },
+      { text: "🛒 Buy", web_app: { url: productWebAppUrl(context.appUrl, product, true) } }
+    ]);
+  }
+  rows.push([
+    { text: "🛍 Open Shop", web_app: { url: context.appUrl } },
+    { text: "👤 Talk to Human", callback_data: "human_support" }
+  ]);
+  return { inline_keyboard: rows };
+}
+
 export async function handleBotUpdate(update: unknown, context: BotContext): Promise<void> {
+  const callbackQuery = (update as any)?.callback_query;
+  if (callbackQuery && typeof callbackQuery.id === "string" &&
+      Number.isSafeInteger(callbackQuery?.from?.id) && !callbackQuery?.from?.is_bot &&
+      callbackQuery?.message?.chat?.type === "private" &&
+      Number.isSafeInteger(callbackQuery?.message?.chat?.id)) {
+    const userId = callbackQuery.from.id as number;
+    const chatId = callbackQuery.message.chat.id as number;
+    const data = typeof callbackQuery.data === "string" ? callbackQuery.data : "";
+
+    if (data === "human_support") {
+      try {
+        await context.call("answerCallbackQuery", {
+          callback_query_id: callbackQuery.id,
+          text: "Connecting you with Mr Mobiles support…"
+        });
+      } catch {
+        // The support handoff can still continue if the visual acknowledgement fails.
+      }
+
+      const name = [callbackQuery.from.first_name, callbackQuery.from.last_name]
+        .filter((value) => typeof value === "string")
+        .join(" ")
+        .slice(0, 160);
+      const handedOff = context.handoff ? await context.handoff(userId, name || "Customer") : false;
+      await context.call("sendMessage", {
+        chat_id: chatId,
+        text: handedOff
+          ? "✅ Human support requested. The Mr Mobiles team can reply to you here."
+          : "Human chat handoff is temporarily unavailable. Please use /support followed by your question or email contact@mrmobiles.in."
+      });
+    }
+    return;
+  }
+
   const inlineQuery = (update as any)?.inline_query;
   if (inlineQuery && typeof inlineQuery.id === "string" &&
       Number.isSafeInteger(inlineQuery?.from?.id) && !inlineQuery?.from?.is_bot) {
@@ -148,7 +215,7 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
   }
 
   const message = (update as any)?.message;
-  // Keep customer orders and admin tools out of groups.
+  // Keep customer orders, AI history and admin tools out of groups.
   if (message?.chat?.type !== "private" || !Number.isSafeInteger(message?.chat?.id) ||
       !Number.isSafeInteger(message?.from?.id) || message.from.is_bot) return;
   const chatId = message.chat.id as number;
@@ -163,17 +230,30 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
     if (category) url.searchParams.set("category", category);
     return { inline_keyboard: [[{ text: label, web_app: { url: url.toString() } }]] };
   };
+
   if (command === "/start") {
-    await send({ text: "👋 Welcome to Mr Mobiles\n\nBrowse phones, accessories and repair services. Use /orders for your recent orders or /support followed by your question to contact our team.", reply_markup: keyboard() });
+    await send({
+      text: "👋 Welcome to Mr Mobiles\n\nI’m your Mr Mobiles AI assistant. Ask me naturally about phones, prices, stock, repairs or orders. I use live shop data where available, and you can switch to human support anytime.",
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "🛍 Open Mr Mobiles", web_app: { url: context.appUrl } }],
+          [{ text: "👤 Talk to Human", callback_data: "human_support" }]
+        ]
+      }
+    });
   } else if (command === "/shop") {
     await send({ text: "📱 Browse Mr Mobiles phones and accessories:", reply_markup: keyboard("Browse Shop") });
   } else if (command === "/repair") {
     await send({ text: "🛠️ Browse repair services. Final repair work and pricing are confirmed after diagnosis.", reply_markup: keyboard("Repair Services", "service") });
   } else if (command === "/id") {
     await send({ text: `Your Telegram user ID: ${userId}\nPrivate chat ID: ${chatId}` });
+  } else if (command === "/privacy") {
+    await send({
+      text: "🔐 AI & privacy\n\nAI questions are processed by the configured AI provider through Vercel AI Gateway, and recent chat text is stored privately in the Mr Mobiles database to keep conversation context. Do not send passwords, OTPs, card numbers, CVVs, API keys or bot tokens. Payment verification and order data remain server-side."
+    });
   } else if (command === "/help") {
     const help = BOT_COMMANDS.map(c => `/${c.command} — ${c.description}`).join("\n");
-    await send({ text: `${help}\n\nSupport: /support followed by your question.${isAdmin ? "\n\nAdmin reply: /reply CUSTOMER_ID your message" : ""}` });
+    await send({ text: `${help}\n\nYou can also just type a normal question to chat with the AI assistant.${isAdmin ? "\n\nAdmin reply: /reply CUSTOMER_ID your message" : ""}` });
   } else if (command === "/orders") {
     const orders = await context.orders(userId);
     if (!orders.length) {
@@ -205,18 +285,14 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
       return;
     }
     await send({ text: `Reply sent to customer ${target}.` });
-  } else if (command === "/support" || (text && !text.startsWith("/"))) {
-    const question = command === "/support" ? argument : text;
+  } else if (command === "/support") {
+    const question = argument;
     if (!context.supportChatId || !context.admins.length) {
-      await send({ text: "💬 Mr Mobiles Support\nEmail: contact@mrmobiles.in\n\nChat forwarding is not set up yet. Please email your question to reach the team.", reply_markup: keyboard() });
+      await send({ text: "💬 Mr Mobiles Support\nEmail: contact@mrmobiles.in\n\nChat forwarding is not set up right now.", reply_markup: keyboard() });
       return;
     }
     if (!question) {
-      await send({ text: "Send /support followed by your question. Include your device model or order ID. Your message and Telegram user ID will be shared with the Mr Mobiles support team." });
-      return;
-    }
-    if (isAdmin) {
-      await send({ text: "To answer a customer, use /reply CUSTOMER_ID your message. Use /help to see all commands." });
+      await send({ text: "Send /support followed by your question, or tap Talk to Human below.", reply_markup: { inline_keyboard: [[{ text: "👤 Talk to Human", callback_data: "human_support" }]] } });
       return;
     }
     if (question.length > 2500) {
@@ -224,7 +300,6 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
       return;
     }
     const name = [message.from.first_name, message.from.last_name].filter(v => typeof v === "string").join(" ").slice(0, 160);
-    // Plain text avoids interpreting customer content as HTML.
     try {
       await context.call("sendMessage", {
         chat_id: context.supportChatId,
@@ -235,8 +310,28 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
       return;
     }
     await send({ text: "✅ Your message has been sent to the Mr Mobiles support team. They can reply here." });
+  } else if (command === "/ai" || (text && !text.startsWith("/"))) {
+    const question = command === "/ai" ? argument : text;
+    if (!question) {
+      await send({ text: "🤖 Ask me anything about Mr Mobiles products, stock, prices, repairs or your orders." });
+      return;
+    }
+    if (!context.aiReply) {
+      await send({ text: "The AI assistant is temporarily unavailable. Use /shop, /orders or /support.", reply_markup: keyboard() });
+      return;
+    }
+    try {
+      await context.call("sendChatAction", { chat_id: chatId, action: "typing" });
+    } catch {
+      // Typing feedback is cosmetic; continue with the answer.
+    }
+    const answer = await context.aiReply(userId, question);
+    await send({
+      text: `🤖 Mr Mobiles AI\n\n${answer.text}`,
+      reply_markup: aiKeyboard(context, answer.products)
+    });
   } else if (!text) {
-    await send({ text: "Please send your question as text using /support, including your device model or order ID." });
+    await send({ text: "Send a text question, or use /help to see the available commands." });
   } else {
     await send({ text: "Use /help to see the available commands.", reply_markup: keyboard() });
   }
