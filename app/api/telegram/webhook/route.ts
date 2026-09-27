@@ -18,9 +18,15 @@ function settings(request: NextRequest) {
 function status(request: NextRequest) {
   const config = settings(request);
   const token = process.env.TELEGRAM_BOT_TOKEN;
+  const customSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
   return {
     ok: true, workflowVersion: BOT_WORKFLOW_VERSION,
     botConfigured: Boolean(token), botId: token ? Number(token.split(":")[0]) : null,
+    // Configuration metadata only: never expose credentials or their hashes.
+    webhookAuthMode: customSecret ? "custom_secret" : "derived_token",
+    botTokenHasWhitespace: Boolean(token && token !== token.trim()),
+    webhookSecretHasWhitespace: Boolean(customSecret && customSecret !== customSecret.trim()),
+    deploymentCommit: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) || null,
     databaseConfigured: Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY),
     supportConfigured: Boolean(config.supportChatId && config.admins.length),
     miniAppUrl: config.appUrl, commands: BOT_COMMANDS
