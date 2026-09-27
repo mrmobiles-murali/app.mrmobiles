@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { priceCart } from "@/lib/catalog";
+import { priceInventoryCart } from "@/lib/server-catalog";
 import { createRazorpayOrder } from "@/lib/razorpay";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { validateTelegramInitData } from "@/lib/telegram-auth";
@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
     const cart = Array.isArray(body?.cart) ? body.cart : [];
     if (!cart.length) throw new Error("Cart is empty.");
 
-    const priced = priceCart(cart);
+    const priced = await priceInventoryCart(cart);
     const supabase = getSupabaseAdmin();
 
     const { data: orderRow, error: insertError } = await supabase

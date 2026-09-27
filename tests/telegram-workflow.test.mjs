@@ -10,7 +10,7 @@ function inlineQuery(query = "iphone") {
 }
 function context(overrides = {}) {
   const calls = [];
-  const ctx = { appUrl: "https://mrmobiles.in/", admins: [99], supportChatId: 99,
+  const ctx = { appUrl: "https://mrmobiles.in/", admins: [99], supportChatId: 99, botUsername: "MrMobilesTestBot",
     call: async (method, body) => { calls.push({ method, body }); return {}; },
     orders: async () => [],
     searchProducts: async () => [],
@@ -41,7 +41,10 @@ test("inline queries return personal product results without a web_app button", 
         subtitle: "Pre-owned",
         pricePaise: 5299900,
         category: "phone",
-        emoji: "📱"
+        emoji: "📱",
+        brand: "Apple",
+        model: "iPhone 13 Pro",
+        stockQty: 2
       }];
     }
   });
@@ -53,8 +56,13 @@ test("inline queries return personal product results without a web_app button", 
   assert.equal(calls[0].body.is_personal, true);
   assert.equal(calls[0].body.results.length, 1);
   assert.match(calls[0].body.results[0].title, /iPhone 13 Pro/);
-  assert.equal(calls[0].body.results[0].reply_markup.inline_keyboard[0][0].web_app, undefined);
-  assert.match(calls[0].body.results[0].reply_markup.inline_keyboard[0][0].url, /^https:\/\/mrmobiles\.in\//);
+  const result = calls[0].body.results[0];
+  assert.match(result.thumbnail_url, /^https:\/\/mrmobiles\.in\/api\/product-card/);
+  assert.match(result.description, /2 in stock/);
+  assert.match(result.reply_markup.inline_keyboard[0][0].url, /^https:\/\/t\.me\/MrMobilesTestBot\?startapp=view_/);
+  assert.match(result.reply_markup.inline_keyboard[0][1].url, /^https:\/\/t\.me\/MrMobilesTestBot\?startapp=buy_/);
+  assert.equal(calls[0].body.button.text, "Open Mr Mobiles");
+  assert.equal(calls[0].body.button.web_app.url, "https://mrmobiles.in/");
 });
 test("inline queries cap results at ten", async () => {
   const products = Array.from({ length: 15 }, (_, i) => ({

@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 
-export const BOT_WORKFLOW_VERSION = "2026-09-27.2";
+export const BOT_WORKFLOW_VERSION = "2026-09-27.3";
 export const BOT_COMMANDS = [
   { command: "start", description: "Welcome and open Mr Mobiles" },
   { command: "shop", description: "Browse phones and accessories" },
@@ -45,12 +45,17 @@ export type InlineProduct = {
   pricePaise: number;
   category: "phone" | "accessory" | "service";
   emoji: string;
+  brand?: string | null;
+  model?: string | null;
+  imageUrl?: string | null;
+  stockQty?: number | null;
 };
 export type TelegramCall = (method: string, body: Record<string, unknown>) => Promise<unknown>;
 export type BotContext = {
   appUrl: string;
   admins: number[];
   supportChatId?: number;
+  botUsername?: string;
   call: TelegramCall;
   orders: (userId: number) => Promise<RecentOrder[]>;
   searchProducts: (query: string) => Promise<InlineProduct[]>;
@@ -67,19 +72,65 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
     const query = typeof inlineQuery.query === "string" ? inlineQuery.query.trim().slice(0, 100) : "";
     const products = (await context.searchProducts(query)).slice(0, 10);
     const results = products.map((product) => {
-      const url = new URL(context.appUrl);
-      url.searchParams.set("category", product.category);
+      const viewUrl = new URL(context.appUrl);
+      viewUrl.searchParams.set("category", product.category);
+      viewUrl.searchParams.set("product", product.id);
+
+      const buyUrl = new URL(viewUrl);
+      buyUrl.searchParams.set("buy", "1");
+
+      let viewTarget = viewUrl.toString();
+      let buyTarget = buyUrl.toString();
+      if (context.botUsername && /^[A-Za-z0-9_]{5,32}$/.test(context.botUsername)) {
+        const botLink = `https://t.me/${context.botUsername}`;
+        const viewDeepLink = new URL(botLink);
+        viewDeepLink.searchParams.set("startapp", `view_${product.id}`.slice(0, 64));
+        const buyDeepLink = new URL(botLink);
+        buyDeepLink.searchParams.set("startapp", `buy_${product.id}`.slice(0, 64));
+        viewTarget = viewDeepLink.toString();
+        buyTarget = buyDeepLink.toString();
+      }
+
       const price = formatInr(product.pricePaise);
+      const stock = typeof product.stockQty === "number"
+        ? `${product.stockQty} in stock`
+        : "Confirm stock";
+      const identity = [product.brand, product.model].filter(Boolean).join(" • ");
+      const cardUrl = product.imageUrl && /^https:\/\//i.test(product.imageUrl)
+        ? product.imageUrl
+        : (() => {
+            const generated = new URL("/api/product-card", context.appUrl);
+            generated.searchParams.set("name", product.name);
+            generated.searchParams.set("price", price);
+            generated.searchParams.set("stock", stock);
+            generated.searchParams.set("emoji", product.emoji);
+            return generated.toString();
+          })();
+
       return {
         type: "article",
         id: `product:${product.id}`,
         title: `${product.emoji} ${product.name}`,
-        description: `${price} • ${product.subtitle}`.slice(0, 256),
+        description: [price, stock, identity || product.subtitle].filter(Boolean).join(" • ").slice(0, 256),
+        thumbnail_url: cardUrl,
+        thumbnail_width: 320,
+        thumbnail_height: 180,
         input_message_content: {
-          message_text: `${product.emoji} ${product.name}\n${product.subtitle}\nPrice: ${price}\n\nMr Mobiles`
+          message_text: [
+            `${product.emoji} ${product.name}`,
+            identity,
+            product.subtitle,
+            `Price: ${price}`,
+            `Stock: ${stock}`,
+            "",
+            "Mr Mobiles"
+          ].filter(Boolean).join("\n")
         },
         reply_markup: {
-          inline_keyboard: [[{ text: "View in Mr Mobiles", url: url.toString() }]]
+          inline_keyboard: [[
+            { text: "View Product", url: viewTarget },
+            { text: "Buy Now", url: buyTarget }
+          ]]
         }
       };
     });
@@ -87,7 +138,11 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
       inline_query_id: inlineQuery.id,
       results,
       cache_time: 15,
-      is_personal: true
+      is_personal: true,
+      button: {
+        text: "Open Mr Mobiles",
+        web_app: { url: context.appUrl }
+      }
     });
     return;
   }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { catalog } from "@/lib/catalog";
+import { searchInventoryProducts } from "@/lib/server-catalog";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { adminIds, BOT_COMMANDS, BOT_WORKFLOW_VERSION, derivedWebhookSecret, handleBotUpdate, matchesSecret, miniAppUrl } from "@/lib/telegram-workflow";
 
@@ -17,17 +17,6 @@ function settings(request: NextRequest) {
   };
 }
 
-function searchCatalog(query: string) {
-  const terms = query.toLowerCase().split(/\s+/).map(term => term.trim()).filter(Boolean);
-  const ranked = catalog.map((product) => {
-    const haystack = `${product.name} ${product.subtitle} ${product.category} ${product.id}`.toLowerCase();
-    const score = terms.length ? terms.reduce((sum, term) => sum + (haystack.includes(term) ? 1 : 0), 0) : 1;
-    return { product, score };
-  }).filter(({ score }) => score > 0)
-    .sort((a, b) => b.score - a.score || a.product.name.localeCompare(b.product.name));
-  return ranked.slice(0, 10).map(({ product }) => product);
-}
-
 function status(request: NextRequest) {
   const config = settings(request);
   const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -43,6 +32,7 @@ function status(request: NextRequest) {
     databaseConfigured: Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY),
     supportConfigured: Boolean(config.supportChatId && config.admins.length),
     inlineHandlerConfigured: true,
+    inventorySource: "supabase",
     miniAppUrl: config.appUrl, commands: BOT_COMMANDS
   };
 }
@@ -106,17 +96,26 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const callTelegram = async (method: string, body: Record<string, unknown>) => {
+      const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body), cache: "no-store", signal: AbortSignal.timeout(12000)
+      });
+      const data = await response.json();
+      if (!response.ok || data?.ok !== true) throw new TelegramError(Number(data?.error_code || response.status));
+      return data.result;
+    };
+
+    let botUsername: string | undefined;
+    if ((update as any)?.inline_query) {
+      const me = await callTelegram("getMe", {}) as any;
+      if (typeof me?.username === "string") botUsername = me.username;
+    }
+
     await handleBotUpdate(update, {
       ...settings(request),
-      async call(method, body) {
-        const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body), cache: "no-store", signal: AbortSignal.timeout(12000)
-        });
-        const data = await response.json();
-        if (!response.ok || data?.ok !== true) throw new TelegramError(Number(data?.error_code || response.status));
-        return data.result;
-      },
+      botUsername,
+      call: callTelegram,
       async orders(userId) {
         const { data, error } = await getSupabaseAdmin().from("orders")
           .select("id, amount_paise, status, workflow_status, created_at")
@@ -125,7 +124,7 @@ export async function POST(request: NextRequest) {
         return data || [];
       },
       async searchProducts(query) {
-        return searchCatalog(query);
+        return searchInventoryProducts(query);
       }
     });
 
