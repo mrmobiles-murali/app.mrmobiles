@@ -55,6 +55,7 @@ export type BotContext = {
   appUrl: string;
   admins: number[];
   supportChatId?: number;
+  botUsername?: string;
   call: TelegramCall;
   orders: (userId: number) => Promise<RecentOrder[]>;
   searchProducts: (query: string) => Promise<InlineProduct[]>;
@@ -77,6 +78,18 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
 
       const buyUrl = new URL(viewUrl);
       buyUrl.searchParams.set("buy", "1");
+
+      let viewTarget = viewUrl.toString();
+      let buyTarget = buyUrl.toString();
+      if (context.botUsername && /^[A-Za-z0-9_]{5,32}$/.test(context.botUsername)) {
+        const botLink = `https://t.me/${context.botUsername}`;
+        const viewDeepLink = new URL(botLink);
+        viewDeepLink.searchParams.set("startapp", `view_${product.id}`.slice(0, 64));
+        const buyDeepLink = new URL(botLink);
+        buyDeepLink.searchParams.set("startapp", `buy_${product.id}`.slice(0, 64));
+        viewTarget = viewDeepLink.toString();
+        buyTarget = buyDeepLink.toString();
+      }
 
       const price = formatInr(product.pricePaise);
       const stock = typeof product.stockQty === "number"
@@ -115,8 +128,8 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
         },
         reply_markup: {
           inline_keyboard: [[
-            { text: "View Product", url: viewUrl.toString() },
-            { text: "Buy Now", url: buyUrl.toString() }
+            { text: "View Product", url: viewTarget },
+            { text: "Buy Now", url: buyTarget }
           ]]
         }
       };
@@ -125,7 +138,11 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
       inline_query_id: inlineQuery.id,
       results,
       cache_time: 15,
-      is_personal: true
+      is_personal: true,
+      button: {
+        text: "Open Mr Mobiles",
+        web_app: { url: context.appUrl }
+      }
     });
     return;
   }
