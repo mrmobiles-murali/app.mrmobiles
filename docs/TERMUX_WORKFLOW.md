@@ -137,6 +137,22 @@ Keep tokens and `.env` files out of commits. Use `vercel env add` / `vercel env 
 
 ## Common problems
 
+### Repair a persistent token mismatch directly from the phone
+
+If the current deployed revision still rejects the token-derived secret, use the saved, Telegram-validated phone token directly instead of copying it between screens. This repair targets only the existing `mrmobilesofficialbot / app.mrmobiles` project. It updates **Production TELEGRAM_BOT_TOKEN**, redeploys the existing hosted source, and then verifies the signed diagnostic. It requires a Vercel account with permission to manage that project.
+
+From the Ubuntu shell, run this entire line as one command:
+
+```bash
+git -C ~/mr-mobiles-app pull --ff-only && bash ~/mr-mobiles-app/scripts/repair-telegram-token.sh
+```
+
+The script installs Ubuntu Node.js/npm if required and pins Vercel CLI to 60.1.3. Complete the Vercel login link in your phone's browser using the account that owns the Bot team. It then reads the existing private bot configuration and passes the token to Vercel through stdin. The token is not placed in shell arguments, history, new files, or terminal output. A temporary project link and explicit team/project IDs prevent a different local project from receiving the token. The repair refuses other bots, other backends, and custom-secret configurations.
+
+If Vercel CLI is already installed and signed in, run `python3 ~/mr-mobiles-app/scripts/sync_telegram_token.py` directly. If the token update succeeds but deployment fails or is interrupted, the saved Production variable has changed; finish that project's redeployment before assuming the repair is complete. The script reports success only after the signed diagnostic passes. It does not change Telegram's webhook, drop updates, or send Telegram messages. After a passing repair, run `python3 ~/mr-mobiles-app/scripts/botctl.py activate`, then test `/start` and `/id` in Telegram.
+
+### Interpret status errors
+
 If Telegram accepts the token but the signed diagnostic reports 401, update the controller with `git pull --ff-only` and run `python3 scripts/botctl.py status`. It reports the deployed authentication mode without revealing credentials. For `custom_secret`, enter the same Production `TELEGRAM_WEBHOOK_SECRET` during Configure. For `derived_token`, leave the custom-secret prompt blank and ensure the current token is deployed as Production `TELEGRAM_BOT_TOKEN`. A token regenerated in BotFather retains the bot ID, so matching bot IDs alone does not prove the token values match. Saving environment variables does not change an existing deployment: redeploy the same project and ensure its production alias points at the new deployment. The tool also identifies surrounding whitespace in the server credentials. It never bypasses the signed diagnostic or activates a mismatched webhook.
 
 | Result | Next action |
