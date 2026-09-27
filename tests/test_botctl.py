@@ -65,5 +65,42 @@ class ControlTests(unittest.TestCase):
                 botctl.telegram(CONFIG, "getMe")
         self.assertNotIn(CONFIG["token"], str(caught.exception))
 
+    def test_custom_secret_required_does_not_attempt_activation(self):
+        info = {"botConfigured": True, "botId": 123456, "webhookAuthMode": "custom_secret"}
+        with patch.object(botctl, "telegram", return_value={"id": 123456}) as api, patch.object(botctl, "metadata", return_value=info) as metadata:
+            with self.assertRaisesRegex(botctl.BotError, "do not leave it blank"):
+                botctl.activate(CONFIG)
+        self.assertEqual([call.args[1] for call in api.call_args_list], ["getMe"])
+        self.assertEqual(metadata.call_count, 1)
+
+    def test_derived_token_mismatch_identifies_server_not_local_token(self):
+        info = {"botConfigured": True, "botId": 123456, "webhookAuthMode": "derived_token"}
+        with patch.object(botctl, "metadata", side_effect=[info, botctl.HttpError(401)]):
+            with self.assertRaisesRegex(botctl.BotError, "SAME token is deployed") as caught:
+                botctl.verified_metadata(CONFIG, {"id": 123456})
+        self.assertNotIn(CONFIG["token"], str(caught.exception))
+
+    def test_custom_secret_mismatch_does_not_recommend_changing_token(self):
+        info = {"botConfigured": True, "botId": 123456, "webhookAuthMode": "custom_secret"}
+        config = {**CONFIG, "webhook_secret": "private-test-secret"}
+        with patch.object(botctl, "metadata", side_effect=[info, botctl.HttpError(401)]):
+            with self.assertRaisesRegex(botctl.BotError, "rejects the custom webhook secret") as caught:
+                botctl.verified_metadata(config, {"id": 123456})
+        self.assertNotIn(config["webhook_secret"], str(caught.exception))
+
+    def test_network_errors_are_not_misreported_as_secret_mismatch(self):
+        info = {"botConfigured": True, "botId": 123456, "webhookAuthMode": "derived_token"}
+        with patch.object(botctl, "metadata", side_effect=[info, botctl.HttpError(503)]):
+            with self.assertRaises(botctl.HttpError) as caught:
+                botctl.verified_metadata(CONFIG, {"id": 123456})
+        self.assertEqual(caught.exception.status, 503)
+
+    def test_server_whitespace_is_reported_before_signed_request(self):
+        info = {"botConfigured": True, "botId": 123456, "webhookAuthMode": "derived_token", "botTokenHasWhitespace": True}
+        with patch.object(botctl, "metadata", return_value=info) as metadata:
+            with self.assertRaisesRegex(botctl.BotError, "surrounding spaces/newlines"):
+                botctl.verified_metadata(CONFIG, {"id": 123456})
+        self.assertEqual(metadata.call_count, 1)
+
 if __name__ == "__main__":
     unittest.main()

@@ -137,6 +137,8 @@ Keep tokens and `.env` files out of commits. Use `vercel env add` / `vercel env 
 
 ## Common problems
 
+If Telegram accepts the token but the signed diagnostic reports 401, update the controller with `git pull --ff-only` and run `python3 scripts/botctl.py status`. It reports the deployed authentication mode without revealing credentials. For `custom_secret`, enter the same Production `TELEGRAM_WEBHOOK_SECRET` during Configure. For `derived_token`, leave the custom-secret prompt blank and ensure the current token is deployed as Production `TELEGRAM_BOT_TOKEN`. A token regenerated in BotFather retains the bot ID, so matching bot IDs alone does not prove the token values match. Saving environment variables does not change an existing deployment: redeploy the same project and ensure its production alias points at the new deployment. The tool also identifies surrounding whitespace in the server credentials. It never bypasses the signed diagnostic or activates a mismatched webhook.
+
 | Result | Next action |
 | --- | --- |
 | `scripts/botctl.py` is missing | Pull the updated repository; the unrelated `awesome` clone does not contain this bot |

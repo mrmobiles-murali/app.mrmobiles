@@ -25,6 +25,12 @@ class BotError(Exception):
     pass
 
 
+class HttpError(BotError):
+    def __init__(self, status):
+        self.status = status
+        super().__init__(f"HTTP {status}. Check the token, project access, and deployed endpoint.")
+
+
 class NoRedirects(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         raise BotError("The endpoint redirected. Configure its final HTTPS origin before continuing.")
@@ -57,7 +63,7 @@ def request_json(url, payload=None, headers=None):
             return json.loads(raw)
     except urllib.error.HTTPError as exc:
         # Never include the request URL: Telegram URLs contain the bot token.
-        raise BotError(f"HTTP {exc.code}. Check the token, project access, and deployed endpoint.") from None
+        raise HttpError(exc.code) from None
     except (urllib.error.URLError, TimeoutError, OSError):
         raise BotError("Network connection failed or timed out. Check connectivity and retry.") from None
     except (ValueError, UnicodeError):
@@ -132,6 +138,39 @@ def metadata(config, signed=False):
     return data
 
 
+def verified_metadata(config, me):
+    public = metadata(config)
+    if not public.get("botConfigured") or public.get("botId") != me["id"]:
+        raise BotError("The deployed server and this token do not refer to the same bot. Check the backend/project first.")
+    mode = public.get("webhookAuthMode")
+    print("Backend: " + config["backend"])
+    print("Server webhook authentication: " + str(mode or "not reported by this deployment"))
+    print("Local webhook authentication: " + ("custom_secret" if config.get("webhook_secret") else "derived_token"))
+    if public.get("deploymentCommit"):
+        print("Deployed revision: " + public["deploymentCommit"])
+    if public.get("botTokenHasWhitespace"):
+        raise BotError("Vercel TELEGRAM_BOT_TOKEN contains surrounding spaces/newlines. Correct its Production value and redeploy.")
+    if public.get("webhookSecretHasWhitespace"):
+        raise BotError("Vercel TELEGRAM_WEBHOOK_SECRET contains surrounding spaces/newlines. Correct its Production value and redeploy.")
+    if mode == "custom_secret" and not config.get("webhook_secret"):
+        raise BotError("The server requires a custom TELEGRAM_WEBHOOK_SECRET. Choose 1 (Configure) and enter the SAME secret at the custom-secret prompt; do not leave it blank.")
+    if mode == "derived_token" and config.get("webhook_secret"):
+        raise BotError("This server derives its secret from the bot token. Choose 1 (Configure) and leave the custom-secret prompt blank.")
+    try:
+        info = metadata(config, signed=True)
+    except HttpError as error:
+        if error.status != 401:
+            raise
+        if mode == "custom_secret":
+            raise BotError("Telegram accepts your token, but the backend rejects the custom webhook secret. Match the saved secret to Vercel Production TELEGRAM_WEBHOOK_SECRET; redeploy if you change the server value.") from None
+        if mode == "derived_token":
+            raise BotError("Telegram accepts your token, but the backend rejects its derived webhook secret. Confirm the SAME token is deployed as TELEGRAM_BOT_TOKEN in Production on this backend; saving an environment variable alone does not update a running deployment.") from None
+        raise BotError("Telegram accepts your token, but backend webhook authentication failed (401). Match the deployed Production bot token and custom secret, then redeploy. Update the repository for detailed diagnostics.") from None
+    if not info.get("botConfigured") or info.get("botId") != me["id"]:
+        raise BotError("The signed diagnostic does not identify the expected bot. Check the deployment before activation.")
+    return info
+
+
 def print_status(config):
     me = telegram(config, "getMe")
     webhook = telegram(config, "getWebhookInfo")
@@ -145,9 +184,7 @@ def print_status(config):
         print(f"Last delivery error at {moment.isoformat()}; may be historical. Send /start to test current delivery.")
     print("Commands: " + ", ".join("/" + c["command"] for c in commands))
     print("Mini App menu: " + str(menu.get("web_app", {}).get("url", menu.get("type", "unknown"))))
-    info = metadata(config, signed=True)
-    if info.get("botId") != me["id"]:
-        raise BotError("The server token belongs to a different bot. Correct Vercel TELEGRAM_BOT_TOKEN first.")
+    info = verified_metadata(config, me)
     print("Signed webhook diagnostic: PASS (no message sent)")
     print("Database variables: " + ("present; database requests need a real /orders test" if info.get("databaseConfigured") else "MISSING"))
     print("Support forwarding: " + ("configured; test with a customer account" if info.get("supportConfigured") else "NOT CONFIGURED; set TELEGRAM_ADMIN_IDS"))
@@ -160,9 +197,7 @@ def print_status(config):
 
 def activate(config, path=CONFIG_PATH):
     me = telegram(config, "getMe")
-    info = metadata(config, signed=True)
-    if not info.get("botConfigured") or info.get("botId") != me["id"]:
-        raise BotError("The deployed server and this token do not refer to the same bot.")
+    info = verified_metadata(config, me)
     if not info.get("databaseConfigured"):
         raise BotError("The deployment is missing Supabase variables. Add them before activation.")
     app_origin = origin(info["miniAppUrl"])
