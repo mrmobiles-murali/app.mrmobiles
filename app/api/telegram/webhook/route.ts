@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { catalog } from "@/lib/catalog";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { adminIds, BOT_COMMANDS, BOT_WORKFLOW_VERSION, derivedWebhookSecret, handleBotUpdate, matchesSecret, miniAppUrl } from "@/lib/telegram-workflow";
 
@@ -15,6 +16,18 @@ function settings(request: NextRequest) {
     supportChatId: Number.isSafeInteger(supportChatId) && supportChatId !== 0 ? supportChatId : undefined
   };
 }
+
+function searchCatalog(query: string) {
+  const terms = query.toLowerCase().split(/\s+/).map(term => term.trim()).filter(Boolean);
+  const ranked = catalog.map((product) => {
+    const haystack = `${product.name} ${product.subtitle} ${product.category} ${product.id}`.toLowerCase();
+    const score = terms.length ? terms.reduce((sum, term) => sum + (haystack.includes(term) ? 1 : 0), 0) : 1;
+    return { product, score };
+  }).filter(({ score }) => score > 0)
+    .sort((a, b) => b.score - a.score || a.product.name.localeCompare(b.product.name));
+  return ranked.slice(0, 10).map(({ product }) => product);
+}
+
 function status(request: NextRequest) {
   const config = settings(request);
   const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -29,9 +42,11 @@ function status(request: NextRequest) {
     deploymentCommit: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) || null,
     databaseConfigured: Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY),
     supportConfigured: Boolean(config.supportChatId && config.admins.length),
+    inlineHandlerConfigured: true,
     miniAppUrl: config.appUrl, commands: BOT_COMMANDS
   };
 }
+
 export function GET(request: NextRequest) {
   try {
     return NextResponse.json(status(request), { headers: { "Cache-Control": "no-store" } });
@@ -39,10 +54,12 @@ export function GET(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "Bot URL configuration is invalid." }, { status: 503 });
   }
 }
+
 class TelegramError extends Error {
   code: number;
   constructor(code: number) { super(`Telegram API failed (${code}).`); this.code = code; }
 }
+
 export async function POST(request: NextRequest) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) return NextResponse.json({ ok: false }, { status: 503 });
@@ -53,11 +70,13 @@ export async function POST(request: NextRequest) {
   let update: unknown;
   try { update = await request.json(); }
   catch { return NextResponse.json({ ok: false }, { status: 400 }); }
+
   try {
     // Signed diagnostic: it cannot send a Telegram message.
     if ((update as any)?.mr_mobiles_probe === true && !(update as any)?.message) {
       return NextResponse.json(status(request));
     }
+
     await handleBotUpdate(update, {
       ...settings(request),
       async call(method, body) {
@@ -75,8 +94,12 @@ export async function POST(request: NextRequest) {
           .eq("telegram_user_id", userId).order("created_at", { ascending: false }).limit(5);
         if (error) throw new Error("Order lookup failed.");
         return data || [];
+      },
+      async searchProducts(query) {
+        return searchCatalog(query);
       }
     });
+
     return NextResponse.json({ ok: true });
   } catch (error) {
     // Fetch exceptions can contain the bot token in their URLs: never log them.
