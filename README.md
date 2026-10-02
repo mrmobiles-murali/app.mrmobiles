@@ -40,7 +40,7 @@ Run `database/schema.sql` in a new Supabase project.
 
 1. Deploy this repository to Vercel.
 2. Add the environment variables.
-3. Attach `app.mrmobiles.in`.
+3. Attach `mrmobiles.in`.
 4. Add the Vercel DNS record at the DNS provider if requested.
 5. Configure the Telegram Mini App/menu button with `https://mrmobiles.in`.
 6. Configure the Razorpay webhook.

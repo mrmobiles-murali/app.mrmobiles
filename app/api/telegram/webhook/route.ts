@@ -5,6 +5,7 @@ import { approveRepairQuote, createTelegramRepairTicket, getTelegramRepairTicket
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { adminIds, BOT_COMMANDS, BOT_WORKFLOW_VERSION, derivedWebhookSecret, handleBotUpdate, matchesSecret, miniAppUrl } from "@/lib/telegram-workflow";
 
+const MINI_APP_URL = "https://mrmobiles.in";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
