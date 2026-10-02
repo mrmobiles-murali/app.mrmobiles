@@ -6,6 +6,7 @@ declare global {
       WebApp: {
         initData: string;
         initDataUnsafe: {
+          start_param?: string;
           user?: {
             id: number;
             first_name: string;
@@ -21,8 +22,9 @@ declare global {
         enableClosingConfirmation(): void;
         showAlert(message: string): void;
         HapticFeedback?: {
-          impactOccurred(style: "light" | "medium" | "heavy"): void;
+          impactOccurred(style: "light" | "medium" | "heavy" | "rigid" | "soft"): void;
           notificationOccurred(type: "error" | "success" | "warning"): void;
+          selectionChanged(): void;
         };
       };
     };

@@ -1,133 +1,343 @@
-import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
+import { answerBusinessQuestion, aiRuntimeConfigured } from "@/lib/business-ai";
+import { getInventoryProductsByIds, searchInventoryProducts } from "@/lib/server-catalog";
+import { approveRepairQuote, createTelegramRepairTicket, getTelegramRepairTicket, listTelegramRepairTickets, REPAIR_STATUSES, updateRepairTicket } from "@/lib/repair-tickets";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { adminIds, BOT_COMMANDS, BOT_WORKFLOW_VERSION, derivedWebhookSecret, handleBotUpdate, matchesSecret, miniAppUrl } from "@/lib/telegram-workflow";
 
 const MINI_APP_URL = "https://mrmobiles.in";
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-function webhookSecret() {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  if (!token) throw new Error("TELEGRAM_BOT_TOKEN missing");
-  return crypto.createHash("sha256").update(token).digest("hex").slice(0, 32);
-}
-
-async function telegram(method: string, body: Record<string, unknown>) {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  if (!token) throw new Error("TELEGRAM_BOT_TOKEN missing");
-
-  const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    cache: "no-store"
-  });
-
-  const data = await response.json();
-  if (!response.ok || data?.ok !== true) {
-    throw new Error(data?.description || "Telegram API error");
-  }
-  return data.result;
-}
-
-function webAppKeyboard(label = "Open Mr Mobiles") {
+function settings(request: NextRequest) {
+  const admins = adminIds(process.env.TELEGRAM_ADMIN_IDS);
+  const candidate = process.env.TELEGRAM_SUPPORT_CHAT_ID;
+  const supportChatId = candidate && /^-?\d+$/.test(candidate) ? Number(candidate) : admins[0];
   return {
-    inline_keyboard: [[
-      {
-        text: label,
-        web_app: { url: MINI_APP_URL }
-      }
-    ]]
+    appUrl: miniAppUrl(request.url, process.env.TELEGRAM_MINI_APP_URL),
+    admins,
+    supportChatId: Number.isSafeInteger(supportChatId) && supportChatId !== 0 ? supportChatId : undefined
   };
 }
 
-export async function POST(request: NextRequest) {
+function status(request: NextRequest) {
+  const config = settings(request);
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const customSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
+  return {
+    ok: true, workflowVersion: BOT_WORKFLOW_VERSION,
+    botConfigured: Boolean(token), botId: token ? Number(token.split(":")[0]) : null,
+    // Configuration metadata only: never expose credentials or their hashes.
+    webhookAuthMode: customSecret ? "custom_secret" : "derived_token",
+    botTokenHasWhitespace: Boolean(token && token !== token.trim()),
+    webhookSecretHasWhitespace: Boolean(customSecret && customSecret !== customSecret.trim()),
+    deploymentCommit: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) || null,
+    databaseConfigured: Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY),
+    supportConfigured: Boolean(config.supportChatId && config.admins.length),
+    inlineHandlerConfigured: true,
+    callbackHandlerConfigured: true,
+    aiConfigured: aiRuntimeConfigured(),
+    aiGateway: "vercel",
+    aiModel: process.env.MR_MOBILES_AI_MODEL || "openai/gpt-5.6-luna",
+    aiConversationMemory: true,
+    liveDraftStreaming: true,
+    compareActions: true,
+    feedbackConfigured: true,
+    repairIntakeRouting: true,
+    repairTicketLifecycle: true,
+    repairQuoteApproval: true,
+    homeDashboard: true,
+    paymentLifecycleNotifications: true,
+    profileSelfHeal: true,
+    inventorySource: "supabase",
+    miniAppUrl: config.appUrl, commands: BOT_COMMANDS
+  };
+}
+
+export function GET(request: NextRequest) {
   try {
-    const incomingSecret = request.headers.get("x-telegram-bot-api-secret-token");
-    if (incomingSecret !== webhookSecret()) {
-      return NextResponse.json({ ok: false }, { status: 401 });
+    return NextResponse.json(status(request), { headers: { "Cache-Control": "no-store" } });
+  } catch {
+    return NextResponse.json({ ok: false, error: "Bot URL configuration is invalid." }, { status: 503 });
+  }
+}
+
+class TelegramError extends Error {
+  code: number;
+  constructor(code: number) { super(`Telegram API failed (${code}).`); this.code = code; }
+}
+
+export async function POST(request: NextRequest) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) return NextResponse.json({ ok: false }, { status: 503 });
+  const secret = process.env.TELEGRAM_WEBHOOK_SECRET || derivedWebhookSecret(token);
+  if (!matchesSecret(request.headers.get("x-telegram-bot-api-secret-token"), secret)) {
+    return NextResponse.json({ ok: false }, { status: 401 });
+  }
+  let update: unknown;
+  try { update = await request.json(); }
+  catch { return NextResponse.json({ ok: false }, { status: 400 }); }
+
+  try {
+    // Signed diagnostic: it cannot send a Telegram message.
+    if ((update as any)?.mr_mobiles_probe === true && !(update as any)?.message) {
+      return NextResponse.json(status(request));
     }
 
-    const update = await request.json();
-    const message = update?.message;
-    if (!message?.chat?.id) return NextResponse.json({ ok: true });
-
-    const chatId = Number(message.chat.id);
-    const text = String(message.text || "").trim();
-    const command = text.split(/\s+/)[0].split("@")[0].toLowerCase();
-
-    if (command === "/start") {
-      await telegram("sendMessage", {
-        chat_id: chatId,
-        parse_mode: "HTML",
-        text:
-          "👋 <b>Welcome to Mr Mobiles</b>\n\nBrowse phones, accessories and repair services directly inside Telegram.",
-        reply_markup: webAppKeyboard()
+    // Self-heal the Telegram webhook subscription after a signed /start update.
+    // This is idempotent, preserves pending updates and never exposes the bot token.
+    const incomingText = typeof (update as any)?.message?.text === "string"
+      ? (update as any).message.text.trim()
+      : "";
+    const incomingCommand = incomingText.split(/\s+/)[0]?.split("@")[0]?.toLowerCase();
+    if (incomingCommand === "/start") {
+      const webhookUrl = new URL(request.url);
+      webhookUrl.search = "";
+      webhookUrl.hash = "";
+      const response = await fetch(`https://api.telegram.org/bot${token}/setWebhook`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url: webhookUrl.toString(),
+          secret_token: secret,
+          allowed_updates: ["message", "inline_query", "callback_query"],
+          max_connections: 5,
+          drop_pending_updates: false
+        }),
+        cache: "no-store",
+        signal: AbortSignal.timeout(12000)
       });
-    } else if (command === "/shop") {
-      await telegram("sendMessage", {
-        chat_id: chatId,
-        text: "📱 Open the Mr Mobiles shop:",
-        reply_markup: webAppKeyboard("Browse Shop")
-      });
-    } else if (command === "/repair") {
-      await telegram("sendMessage", {
-        chat_id: chatId,
-        text: "🛠️ Open Mr Mobiles to choose a repair service:",
-        reply_markup: webAppKeyboard("Book Repair")
-      });
-    } else if (command === "/orders") {
-      const supabase = getSupabaseAdmin();
-      const { data, error } = await supabase
-        .from("orders")
-        .select("id, amount_paise, status, created_at")
-        .eq("telegram_user_id", chatId)
-        .order("created_at", { ascending: false })
-        .limit(5);
-
-      if (error) throw new Error(error.message);
-
-      if (!data?.length) {
-        await telegram("sendMessage", {
-          chat_id: chatId,
-          text: "You don't have any Mr Mobiles orders yet.",
-          reply_markup: webAppKeyboard("Start Shopping")
-        });
-      } else {
-        const lines = data.map((order: any, index: number) => {
-          const amount = new Intl.NumberFormat("en-IN", {
-            style: "currency",
-            currency: "INR",
-            maximumFractionDigits: 0
-          }).format(Number(order.amount_paise) / 100);
-          const shortId = String(order.id).slice(0, 8);
-          return `${index + 1}. #${shortId} • ${amount} • ${order.status}`;
-        });
-
-        await telegram("sendMessage", {
-          chat_id: chatId,
-          parse_mode: "HTML",
-          text: `🧾 <b>Your recent orders</b>\n\n${lines.join("\n")}`,
-          reply_markup: webAppKeyboard()
-        });
+      const data = await response.json();
+      if (!response.ok || data?.ok !== true) {
+        throw new TelegramError(Number(data?.error_code || response.status));
       }
-    } else if (command === "/support") {
-      await telegram("sendMessage", {
-        chat_id: chatId,
-        parse_mode: "HTML",
-        text:
-          "💬 <b>Mr Mobiles Support</b>\nOpen the Mini App for shop and service options. You can also send your question in this chat.",
-        reply_markup: webAppKeyboard()
-      });
-    } else {
-      await telegram("sendMessage", {
-        chat_id: chatId,
-        text: "Use the menu below to open Mr Mobiles.",
-        reply_markup: webAppKeyboard()
-      });
     }
+
+    const callTelegram = async (method: string, body: Record<string, unknown>) => {
+      const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body), cache: "no-store", signal: AbortSignal.timeout(12000)
+      });
+      const data = await response.json();
+      if (!response.ok || data?.ok !== true) throw new TelegramError(Number(data?.error_code || response.status));
+      return data.result;
+    };
+
+    let botUsername: string | undefined;
+    if ((update as any)?.inline_query) {
+      const me = await callTelegram("getMe", {}) as any;
+      if (typeof me?.username === "string") botUsername = me.username;
+    }
+
+    const config = settings(request);
+
+    if (incomingCommand === "/start") {
+      try {
+        await callTelegram("setMyName", { name: "Mr Mobiles" });
+        await callTelegram("setMyDescription", {
+          description: "AI shopping assistant for phones, live stock, repair tickets, orders, payments and Mr Mobiles support."
+        });
+        await callTelegram("setMyShortDescription", {
+          short_description: "Mr Mobiles AI | Shop, repair, track and get support."
+        });
+        await callTelegram("setMyCommands", { commands: BOT_COMMANDS });
+        await callTelegram("setChatMenuButton", {
+          menu_button: {
+            type: "web_app",
+            text: "Open Mr Mobiles",
+            web_app: { url: config.appUrl }
+          }
+        });
+      } catch {
+        // Customer chat must continue even if Telegram profile synchronization is temporarily unavailable.
+      }
+    }
+
+    await handleBotUpdate(update, {
+      ...config,
+      botUsername,
+      call: callTelegram,
+      aiReply: answerBusinessQuestion,
+      async handoff(userId, name) {
+        if (!config.supportChatId || !config.admins.length) return false;
+        try {
+          await callTelegram("sendMessage", {
+            chat_id: config.supportChatId,
+            text: [
+              "👤 Human support requested",
+              `Name: ${name}`,
+              `Customer ID: ${userId}`,
+              "",
+              "Reply in your private chat with the bot:",
+              `/reply ${userId} your message`
+            ].join("\n")
+          });
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      async repairIntake(userId, name, details) {
+        try {
+          const ticket = await createTelegramRepairTicket({
+            telegramUserId: userId,
+            customerName: name,
+            details
+          });
+
+          if (config.supportChatId && config.admins.length) {
+            try {
+              await callTelegram("sendMessage", {
+                chat_id: config.supportChatId,
+                text: [
+                  "🛠 New repair ticket",
+                  `Reference: ${ticket.reference_code}`,
+                  `Name: ${name}`,
+                  `Customer ID: ${userId}`,
+                  `Device: ${[ticket.device_brand, ticket.device_model].filter(Boolean).join(" ")}`,
+                  `Issue: ${ticket.issue_or_condition}`,
+                  "",
+                  "Admin tools:",
+                  `/repairupdate ${ticket.reference_code} diagnosing Device inspection started`,
+                  `/repairquote ${ticket.reference_code} 2500 Display replacement quote`,
+                  "",
+                  "Reply directly:",
+                  `/reply ${userId} your message`
+                ].join("\n")
+              });
+            } catch {
+              // Ticket remains valid even if the admin notification is temporarily unavailable.
+            }
+          }
+
+          return { referenceCode: ticket.reference_code };
+        } catch {
+          return null;
+        }
+      },
+      async repairs(userId) {
+        return listTelegramRepairTickets(userId);
+      },
+      async repairStatus(userId, referenceCode) {
+        return getTelegramRepairTicket(userId, referenceCode);
+      },
+      async repairUpdate(referenceCode, status, note) {
+        if (!REPAIR_STATUSES.includes(status as any)) return false;
+        const ticket = await updateRepairTicket({
+          referenceCode,
+          status: status as any,
+          note
+        });
+        if (!ticket) return false;
+
+        if (ticket.telegram_user_id) {
+          try {
+            await callTelegram("sendMessage", {
+              chat_id: Number(ticket.telegram_user_id),
+              text: [
+                "🛠 Repair status updated",
+                `Reference: ${ticket.reference_code}`,
+                `Status: ${ticket.status}`,
+                ticket.status_note ? `Note: ${ticket.status_note}` : ""
+              ].filter(Boolean).join("\n")
+            });
+          } catch {
+            // The database state is authoritative even if notification delivery fails.
+          }
+        }
+        return true;
+      },
+      async repairQuote(referenceCode, amountPaise, note) {
+        const ticket = await updateRepairTicket({
+          referenceCode,
+          status: "awaiting_approval",
+          note: note || "Repair quote is ready for customer approval.",
+          quotedAmountPaise: amountPaise
+        });
+        if (!ticket) return false;
+
+        if (ticket.telegram_user_id) {
+          try {
+            await callTelegram("sendMessage", {
+              chat_id: Number(ticket.telegram_user_id),
+              text: [
+                "💰 Repair quote ready",
+                `Reference: ${ticket.reference_code}`,
+                `Quote: ${new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(amountPaise / 100)}`,
+                ticket.status_note ? `Note: ${ticket.status_note}` : "",
+                "",
+                "Approve only if you want Mr Mobiles to proceed."
+              ].filter(Boolean).join("\n"),
+              reply_markup: {
+                inline_keyboard: [[
+                  { text: "✅ Approve Quote", callback_data: `repair_approve:${ticket.reference_code}` },
+                  { text: "👤 Talk to Human", callback_data: "human_support" }
+                ]]
+              }
+            });
+          } catch {
+            // Quote remains stored even if notification delivery fails.
+          }
+        }
+        return true;
+      },
+      async approveRepair(userId, referenceCode) {
+        const ticket = await approveRepairQuote(userId, referenceCode);
+        if (!ticket) return false;
+
+        if (config.supportChatId && config.admins.length) {
+          try {
+            await callTelegram("sendMessage", {
+              chat_id: config.supportChatId,
+              text: [
+                "✅ Repair quote approved",
+                `Reference: ${ticket.reference_code}`,
+                `Customer ID: ${userId}`,
+                "Status: approved",
+                "",
+                `/repairupdate ${ticket.reference_code} repairing Repair work started`
+              ].join("\n")
+            });
+          } catch {
+            // Approval is already stored.
+          }
+        }
+        return true;
+      },
+      async orders(userId) {
+        const { data, error } = await getSupabaseAdmin().from("orders")
+          .select("id, amount_paise, status, workflow_status, created_at")
+          .eq("telegram_user_id", userId).order("created_at", { ascending: false }).limit(5);
+        if (error) throw new Error("Order lookup failed.");
+        return data || [];
+      },
+      async searchProducts(query) {
+        return searchInventoryProducts(query);
+      },
+      async productsByIds(ids) {
+        return getInventoryProductsByIds(ids);
+      },
+      async feedback(userId, responseId, rating) {
+        const { error } = await getSupabaseAdmin()
+          .from("ai_feedback")
+          .upsert({
+            assistant_message_id: responseId,
+            telegram_user_id: userId,
+            rating,
+            updated_at: new Date().toISOString()
+          }, {
+            onConflict: "assistant_message_id,telegram_user_id"
+          });
+        return !error;
+      }
+    });
 
     return NextResponse.json({ ok: true });
   } catch (error) {
-    console.error("Telegram webhook error", error);
-    return NextResponse.json({ ok: false }, { status: 500 });
+    // Fetch exceptions can contain the bot token in their URLs: never log them.
+    const code = error instanceof TelegramError ? error.code : 0;
+    console.error("Telegram workflow request failed", { code });
+    if (code === 400 || code === 403) return NextResponse.json({ ok: true, deliveryFailed: true });
+    return NextResponse.json({ ok: false }, { status: 503 });
   }
 }
