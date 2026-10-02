@@ -299,6 +299,20 @@ export default function Home() {
         <div className="brandMark">Mr</div>
       </section>
 
+      <div className="heroMeta" aria-label="Shop highlights">
+        <span><strong>{products.length}</strong> products</span>
+        <span><strong>Fast</strong> delivery</span>
+        <span><strong>Secure</strong> checkout</span>
+      </div>
+
+      <div className="sectionHeading">
+        <div>
+          <span className="sectionKicker">Browse the collection</span>
+          <h2>What do you need today?</h2>
+        </div>
+        <span className="resultCount">{filtered.length} results</span>
+      </div>
+
       <nav className="chips" aria-label="Product categories">
         {[
           ["all", "All"],
@@ -319,7 +333,7 @@ export default function Home() {
         ))}
       </nav>
 
-      <section className="grid">
+      <section className="grid" aria-label="Products">
         {filtered.map((product) => {
           const qty = cart[product.id] || 0;
           return (
@@ -353,6 +367,7 @@ export default function Home() {
             </article>
           );
         })}
+        {!filtered.length && <p className="emptyState">No products in this category yet.</p>}
       </section>
 
       <section className="checkoutBar">
