@@ -1,9 +1,48 @@
 import crypto from "node:crypto";
-import { encodeMiniAppWebsiteCart, parseWebsiteCartStartPayload, websiteProductSearchName } from "@/lib/website-cart";
 
 export const BOT_WORKFLOW_VERSION = "2026-10-04.web-checkout";
 export const REPAIR_RUSH_SHORT_NAME = "repairrush";
 export const REPAIR_RUSH_BOT_USERNAME = "MrMobileDoctor_bot";
+const WEBSITE_PRODUCT_NAMES: Record<number, string> = {
+  1: "iPhone 13 Pro 128GB",
+  2: "iPhone 12 64GB",
+  3: "iPhone 11 128GB",
+  4: "Galaxy S22 Ultra",
+  5: "OnePlus 11R 5G",
+  6: "Pixel 7",
+  7: "iPhone 14 Pro Deep Purple",
+  8: "Galaxy Z Fold4 Limited"
+};
+
+function parseWebsiteCartStartPayload(payload: string): Array<{ websiteId: number; qty: number }> {
+  const match = payload.match(/^cart_([0-9x_]{3,56})$/i);
+  if (!match) return [];
+  const seen = new Set<number>();
+  const items: Array<{ websiteId: number; qty: number }> = [];
+  for (const part of match[1].split("_")) {
+    const entry = part.match(/^(\d{1,2})x([1-5])$/);
+    if (!entry) continue;
+    const websiteId = Number(entry[1]);
+    const qty = Number(entry[2]);
+    if (!WEBSITE_PRODUCT_NAMES[websiteId] || seen.has(websiteId)) continue;
+    seen.add(websiteId);
+    items.push({ websiteId, qty });
+  }
+  return items.slice(0, 8);
+}
+
+function websiteProductSearchName(websiteId: number): string | null {
+  return WEBSITE_PRODUCT_NAMES[websiteId] || null;
+}
+
+function encodeMiniAppWebsiteCart(items: Array<{ productId: string; qty: number }>): string {
+  return items
+    .filter((item) => /^[A-Za-z0-9_-]{1,64}$/.test(item.productId) && Number.isInteger(item.qty) && item.qty >= 1 && item.qty <= 5)
+    .slice(0, 8)
+    .map((item) => item.productId + "~" + item.qty)
+    .join(",");
+}
+
 export const DEFAULT_REPAIR_REPLY = [
   "Your repair request has been received ✅",
   "We’ll contact you soon.",
