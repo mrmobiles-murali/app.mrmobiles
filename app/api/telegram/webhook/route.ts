@@ -3,7 +3,7 @@ import { answerBusinessQuestion, aiRuntimeConfigured } from "@/lib/business-ai";
 import { getInventoryProductsByIds, searchInventoryProducts } from "@/lib/server-catalog";
 import { approveRepairQuote, createTelegramRepairTicket, getTelegramRepairTicket, listTelegramRepairTickets, REPAIR_STATUSES, updateRepairTicket } from "@/lib/repair-tickets";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
-import { adminIds, BOT_COMMANDS, BOT_WORKFLOW_VERSION, derivedWebhookSecret, handleBotUpdate, matchesSecret, miniAppUrl, repairRushGameUrl, isRepairRushUpdate, REPAIR_RUSH_SHORT_NAME, REPAIR_RUSH_BOT_USERNAME } from "@/lib/telegram-workflow";
+import { adminIds, BOT_COMMANDS, BOT_WORKFLOW_VERSION, derivedWebhookSecret, handleBotUpdate, matchesSecret, miniAppUrl, versionedMiniAppUrl, repairRushGameUrl, isRepairRushUpdate, REPAIR_RUSH_SHORT_NAME, REPAIR_RUSH_BOT_USERNAME } from "@/lib/telegram-workflow";
 
 const MINI_APP_URL = "https://mrmobiles.in";
 export const runtime = "nodejs";
@@ -158,7 +158,7 @@ export async function POST(request: NextRequest) {
           menu_button: {
             type: "web_app",
             text: "Open Mr Mobiles",
-            web_app: { url: config.appUrl }
+            web_app: { url: versionedMiniAppUrl(config.appUrl) }
           }
         });
       } catch {

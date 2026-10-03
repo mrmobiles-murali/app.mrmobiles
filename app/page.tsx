@@ -38,7 +38,7 @@ export default function Home() {
   const [sessionReady, setSessionReady] = useState(false);
   const [paymentsEnabled, setPaymentsEnabled] = useState(false);
   const [repairs, setRepairs] = useState<RepairItem[]>([]);
-  const [repairsOpen, setRepairsOpen] = useState(false);
+  const [repairsOpen, setRepairsOpen] = useState(true);
   const [message, setMessage] = useState("");
 
   useEffect(() => {
@@ -400,30 +400,32 @@ export default function Home() {
         ))}
       </nav>
 
-      {sessionReady && (
-        <section className="accountPanel">
+      <section className="accountPanel">
           <button className="accountToggle" onClick={() => setRepairsOpen((value) => !value)}>
-            <span><strong>My Repairs & Devices</strong><small>{repairs.length} repairs · {savedDevices.length} devices</small></span>
+            <span>
+              <strong>My Repairs & Devices</strong>
+              <small>{sessionReady ? `${repairs.length} repairs · ${savedDevices.length} devices` : "Connecting securely to Telegram…"}</small>
+            </span>
             <span>{repairsOpen ? "−" : "+"}</span>
           </button>
           {repairsOpen && (
             <div className="accountBody">
+              {!sessionReady && <p>Open this Mini App from Mr Mobiles in Telegram to load your private repair history.</p>}
               <h3>Repair history</h3>
-              {repairs.length ? repairs.map((ticket) => (
+              {sessionReady && repairs.length ? repairs.map((ticket) => (
                 <div className="repairItem" key={ticket.reference_code}>
                   <strong>{[ticket.device_brand, ticket.device_model].filter(Boolean).join(" ")}</strong>
                   <span>{ticket.reference_code} · {ticket.issue_or_condition}</span>
                   <em>{ticket.status.replaceAll("_", " ")}</em>
                 </div>
-              )) : <p>No Telegram repair history yet.</p>}
+              )) : sessionReady ? <p>No Telegram repair history yet.</p> : null}
               <h3>My devices</h3>
               <div className="deviceList">
-                {savedDevices.length ? savedDevices.map((device) => <span key={device}>📱 {device}</span>) : <p>Devices are saved automatically from repair history.</p>}
+                {sessionReady && savedDevices.length ? savedDevices.map((device) => <span key={device}>📱 {device}</span>) : sessionReady ? <p>Devices are saved automatically from repair history.</p> : null}
               </div>
             </div>
           )}
         </section>
-      )}
 
       <section className="grid">
         {filtered.map((product) => {
