@@ -20,6 +20,8 @@ type RepairItem = {
   device_model: string;
   issue_or_condition: string;
   status: string;
+  quoted_amount_paise?: number | null;
+  status_note?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -77,6 +79,8 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [customLoading, setCustomLoading] = useState(false);
   const [customAmount, setCustomAmount] = useState("1");
+  const [repairLoading, setRepairLoading] = useState(false);
+  const [repairPaymentRef, setRepairPaymentRef] = useState<string | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
   const [paymentsEnabled, setPaymentsEnabled] = useState(false);
   const [repairs, setRepairs] = useState<RepairItem[]>([]);
@@ -90,6 +94,12 @@ export default function Home() {
     const requestedProduct = params.get("product");
     const buyFromQuery = params.get("buy") === "1";
     const websiteCart = parseMiniAppWebsiteCart(params.get("website_cart"));
+    const requestedRepairRef = String(params.get("repair_ref") || "").trim().toUpperCase();
+
+    if (/^MRR-[A-F0-9]{10}$/.test(requestedRepairRef)) {
+      setRepairPaymentRef(requestedRepairRef);
+      setRepairsOpen(true);
+    }
 
     if (requestedCategory === "phone" || requestedCategory === "accessory" || requestedCategory === "service") {
       setCategory(requestedCategory);
@@ -285,6 +295,13 @@ export default function Home() {
     return Array.from(new Set(labels));
   }, [repairs]);
 
+  const repairPaymentTicket = useMemo(
+    () => repairPaymentRef
+      ? repairs.find((ticket) => ticket.reference_code === repairPaymentRef) || null
+      : null,
+    [repairPaymentRef, repairs]
+  );
+
   useEffect(() => {
     const mainButton = window.Telegram?.WebApp.MainButton;
     if (!mainButton) return;
@@ -434,6 +451,56 @@ export default function Home() {
     if (!orderResponse.ok) throw new Error(order.error || "Could not create order.");
 
     openOwnDomainPayment(order, "Telegram Mini App order");
+  }
+
+  async function payRepairQuote() {
+    const tg = window.Telegram?.WebApp;
+    if (!tg) {
+      setMessage("Open this app from Telegram.");
+      return;
+    }
+    if (!sessionReady) {
+      setMessage("Secure Telegram session is not ready.");
+      return;
+    }
+    if (!paymentsEnabled) {
+      setMessage("Online payment is temporarily unavailable.");
+      return;
+    }
+    if (!repairPaymentRef || !repairPaymentTicket) {
+      setMessage("Repair quote is still loading.");
+      return;
+    }
+    if (repairPaymentTicket.status !== "approved" || !repairPaymentTicket.quoted_amount_paise) {
+      setMessage(
+        repairPaymentTicket.status === "repairing" || repairPaymentTicket.status === "ready" || repairPaymentTicket.status === "completed"
+          ? "This repair payment is already completed or the repair is in progress."
+          : "Approve the repair quote in Telegram before payment."
+      );
+      return;
+    }
+
+    try {
+      setRepairLoading(true);
+      setMessage("");
+
+      const orderResponse = await fetch("/api/razorpay/order", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-telegram-init-data": tg.initData
+        },
+        body: JSON.stringify({ repairReference: repairPaymentRef })
+      });
+
+      const order = await orderResponse.json();
+      if (!orderResponse.ok) throw new Error(order.error || "Could not create repair payment.");
+
+      openOwnDomainPayment(order, `Repair ${repairPaymentRef}`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Repair payment failed.");
+      setRepairLoading(false);
+    }
   }
 
   async function payCustomAmount() {
@@ -635,6 +702,60 @@ export default function Home() {
           );
         })}
       </section>
+
+      {repairPaymentRef && (
+        <section className="customPaymentPanel" aria-labelledby="repair-payment-title">
+          <div className="customPaymentHeading">
+            <div>
+              <span className="pill">Approved repair</span>
+              <h2 id="repair-payment-title">Pay repair quote</h2>
+              <p>
+                {repairPaymentTicket
+                  ? `${[repairPaymentTicket.device_brand, repairPaymentTicket.device_model].filter(Boolean).join(" ")} · ${repairPaymentTicket.reference_code}`
+                  : `Loading ${repairPaymentRef}…`}
+              </p>
+            </div>
+            <strong>🔧</strong>
+          </div>
+
+          {repairPaymentTicket ? (
+            <div className="customPaymentForm">
+              <label>Quoted amount</label>
+              <div>
+                <span>₹</span>
+                <input
+                  aria-label="Approved repair quote amount"
+                  value={repairPaymentTicket.quoted_amount_paise ? String(repairPaymentTicket.quoted_amount_paise / 100) : ""}
+                  readOnly
+                />
+                <button
+                  type="button"
+                  disabled={
+                    repairLoading ||
+                    !sessionReady ||
+                    repairPaymentTicket.status !== "approved" ||
+                    !repairPaymentTicket.quoted_amount_paise
+                  }
+                  onClick={payRepairQuote}
+                >
+                  {repairLoading
+                    ? "Preparing…"
+                    : repairPaymentTicket.status === "approved"
+                      ? `Pay ${money(Number(repairPaymentTicket.quoted_amount_paise || 0))}`
+                      : "Payment completed"}
+                </button>
+              </div>
+              <small>
+                {repairPaymentTicket.status === "approved"
+                  ? "Amount is locked to the technician-approved quote and verified again on the server."
+                  : `Repair status: ${repairPaymentTicket.status.replaceAll("_", " ")}`}
+              </small>
+            </div>
+          ) : (
+            <p className="accountNote">Loading your approved repair quote securely from Telegram…</p>
+          )}
+        </section>
+      )}
 
       {paymentsEnabled && (
         <section className="customPaymentPanel" aria-labelledby="custom-payment-title">
