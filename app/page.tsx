@@ -12,6 +12,16 @@ type StoreProduct = Product & {
 
 type CartMap = Record<string, number>;
 
+type RepairItem = {
+  reference_code: string;
+  device_brand?: string | null;
+  device_model: string;
+  issue_or_condition: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+};
+
 function money(paise: number) {
   return new Intl.NumberFormat("en-IN", {
     style: "currency",
@@ -27,6 +37,8 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [sessionReady, setSessionReady] = useState(false);
   const [paymentsEnabled, setPaymentsEnabled] = useState(false);
+  const [repairs, setRepairs] = useState<RepairItem[]>([]);
+  const [repairsOpen, setRepairsOpen] = useState(false);
   const [message, setMessage] = useState("");
 
   useEffect(() => {
@@ -112,6 +124,14 @@ export default function Home() {
         if (!r.ok) throw new Error(data.error || "Telegram session validation failed.");
         setSessionReady(true);
 
+        fetch("/api/telegram/repairs", {
+          method: "POST",
+          headers: { "x-telegram-init-data": tg.initData }
+        })
+          .then((response) => response.ok ? response.json() : Promise.reject())
+          .then((repairData) => setRepairs(Array.isArray(repairData?.tickets) ? repairData.tickets : []))
+          .catch(() => undefined);
+
         try {
           const reconcileResponse = await fetch("/api/orders/reconcile", {
             method: "POST",
@@ -144,6 +164,13 @@ export default function Home() {
   );
 
   const count = Object.values(cart).reduce((a, b) => a + b, 0);
+
+  const savedDevices = useMemo(() => {
+    const labels = repairs
+      .map((ticket) => [ticket.device_brand, ticket.device_model].filter(Boolean).join(" ").trim())
+      .filter(Boolean);
+    return Array.from(new Set(labels));
+  }, [repairs]);
 
   useEffect(() => {
     const mainButton = window.Telegram?.WebApp.MainButton;
@@ -372,6 +399,31 @@ export default function Home() {
           </button>
         ))}
       </nav>
+
+      {sessionReady && (
+        <section className="accountPanel">
+          <button className="accountToggle" onClick={() => setRepairsOpen((value) => !value)}>
+            <span><strong>My Repairs & Devices</strong><small>{repairs.length} repairs · {savedDevices.length} devices</small></span>
+            <span>{repairsOpen ? "−" : "+"}</span>
+          </button>
+          {repairsOpen && (
+            <div className="accountBody">
+              <h3>Repair history</h3>
+              {repairs.length ? repairs.map((ticket) => (
+                <div className="repairItem" key={ticket.reference_code}>
+                  <strong>{[ticket.device_brand, ticket.device_model].filter(Boolean).join(" ")}</strong>
+                  <span>{ticket.reference_code} · {ticket.issue_or_condition}</span>
+                  <em>{ticket.status.replaceAll("_", " ")}</em>
+                </div>
+              )) : <p>No Telegram repair history yet.</p>}
+              <h3>My devices</h3>
+              <div className="deviceList">
+                {savedDevices.length ? savedDevices.map((device) => <span key={device}>📱 {device}</span>) : <p>Devices are saved automatically from repair history.</p>}
+              </div>
+            </div>
+          )}
+        </section>
+      )}
 
       <section className="grid">
         {filtered.map((product) => {
