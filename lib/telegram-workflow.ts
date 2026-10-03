@@ -345,32 +345,57 @@ function adminDashboardText(summary: AdminDashboardSummary): string {
 }
 
 function adminTicketKeyboard(ticket: AdminRepairTicket) {
-  const rows: Array<Array<Record<string, unknown>>> = [
-    [
-      { text: "🔎 Diagnosing", callback_data: `repair_admin:${ticket.reference_code}:diagnosing` },
-      { text: "💰 Quote", callback_data: `repair_quote_prompt:${ticket.reference_code}` }
-    ],
-    [
-      { text: "🔧 Repairing", callback_data: `repair_admin:${ticket.reference_code}:repairing` },
-      { text: "📦 Ready", callback_data: `repair_admin:${ticket.reference_code}:ready` }
-    ],
-    [{ text: "✅ Completed", callback_data: `repair_admin:${ticket.reference_code}:completed` }],
-    [
+  const rows: Array<Array<Record<string, unknown>>> = [];
+  const status = String(ticket.status || "");
+
+  if (status === "received" || status === "reviewing") {
+    rows.push([{ text: "🔎 Start Diagnosis", callback_data: `repair_admin:${ticket.reference_code}:diagnosing` }]);
+  } else if (status === "diagnosing") {
+    rows.push([{ text: "💰 Send Repair Quote", callback_data: `repair_quote_prompt:${ticket.reference_code}` }]);
+  } else if (status === "awaiting_approval") {
+    rows.push([
+      { text: "💰 Update Quote", callback_data: `repair_quote_prompt:${ticket.reference_code}` },
+      { text: "🔄 Refresh", callback_data: `admin_ticket:${ticket.reference_code}` }
+    ]);
+  } else if (status === "approved") {
+    rows.push([{ text: "💳 Awaiting Quote Payment", callback_data: `admin_ticket:${ticket.reference_code}` }]);
+  } else if (status === "repairing") {
+    rows.push([{ text: "📦 Mark Ready", callback_data: `repair_admin:${ticket.reference_code}:ready` }]);
+  } else if (status === "ready") {
+    rows.push([{ text: "✅ Mark Delivered / Completed", callback_data: `repair_admin:${ticket.reference_code}:completed` }]);
+  } else if (status === "completed") {
+    rows.push([
+      { text: "🛡 30d Warranty", callback_data: `warranty_quick:${ticket.reference_code}:30` },
+      { text: "🛡 90d Warranty", callback_data: `warranty_quick:${ticket.reference_code}:90` }
+    ]);
+    rows.push([{ text: "🛡 Custom Warranty", callback_data: `warranty_prompt:${ticket.reference_code}` }]);
+  }
+
+  if (!["completed", "cancelled", "rejected"].includes(status)) {
+    rows.push([
       { text: "👨‍🔧 Assign", callback_data: `repair_assign_prompt:${ticket.reference_code}` },
       { text: "⏱ SLA", callback_data: `repair_sla_prompt:${ticket.reference_code}` }
-    ]
-  ];
-  if (ticket.status === "completed") {
-    rows.push([{ text: "🛡 Warranty", callback_data: `warranty_prompt:${ticket.reference_code}` }]);
+    ]);
   }
+
   const customerId = Number(ticket.telegram_user_id);
   if (Number.isSafeInteger(customerId) && customerId > 0) {
     rows.push([
-      { text: "⚡ Default Reply", callback_data: `reply_default:${customerId}` },
-      { text: "✍️ Custom Reply", callback_data: `reply_customer:${customerId}` }
+      {
+        text: "⚡ Default Reply",
+        callback_data: `reply_default:${ticket.reference_code}:${customerId}`
+      },
+      {
+        text: "✍️ Custom Reply",
+        callback_data: `reply_customer:${ticket.reference_code}:${customerId}`
+      }
     ]);
   }
-  rows.push([{ text: "⬅️ Admin Dashboard", callback_data: "admin_dashboard" }]);
+
+  rows.push([
+    { text: "🔄 Refresh Ticket", callback_data: `admin_ticket:${ticket.reference_code}` },
+    { text: "⬅️ Dashboard", callback_data: "admin_dashboard" }
+  ]);
   return { inline_keyboard: rows };
 }
 
@@ -456,7 +481,7 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
     const adminId = callbackQuery.from.id as number;
     const callbackChatId = callbackQuery.message.chat.id as number;
     const callbackData = typeof callbackQuery.data === "string" ? callbackQuery.data : "";
-    const replyMatch = callbackData.match(/^reply_(default|customer):(\d+)$/);
+    const replyMatch = callbackData.match(/^reply_(default|customer):(?:(MRR-[A-F0-9]{10}):)?(\d+)$/i);
     const repairActionMatch = callbackData.match(
       /^repair_admin:(MRR-[A-F0-9]{10}):(diagnosing|repairing|ready|completed)$/i
     );
@@ -464,8 +489,9 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
     const assignPromptMatch = callbackData.match(/^repair_assign_prompt:(MRR-[A-F0-9]{10})$/i);
     const slaPromptMatch = callbackData.match(/^repair_sla_prompt:(MRR-[A-F0-9]{10})$/i);
     const warrantyPromptMatch = callbackData.match(/^warranty_prompt:(MRR-[A-F0-9]{10})$/i);
+    const warrantyQuickMatch = callbackData.match(/^warranty_quick:(MRR-[A-F0-9]{10}):(30|90|180)$/i);
 
-    if (repairActionMatch || quotePromptMatch || assignPromptMatch || slaPromptMatch || warrantyPromptMatch) {
+    if (repairActionMatch || quotePromptMatch || assignPromptMatch || slaPromptMatch || warrantyPromptMatch || warrantyQuickMatch) {
       if (!context.admins.includes(adminId)) {
         await safeAnswerCallback(context, callbackQuery.id, "This action is for the Mr Mobiles support team.");
         return;
@@ -474,27 +500,67 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
 
     if (repairActionMatch) {
       const referenceCode = repairActionMatch[1].toUpperCase();
-      const status = repairActionMatch[2].toLowerCase();
+      const requestedStatus = repairActionMatch[2].toLowerCase();
+      const hasStateGuard = Boolean(context.adminRepairTicket);
+      const ticket = context.adminRepairTicket
+        ? await context.adminRepairTicket(referenceCode)
+        : null;
+
+      if (hasStateGuard && !ticket) {
+        await safeAnswerCallback(context, callbackQuery.id, "Repair ticket not found.");
+        return;
+      }
+
+      const currentStatus = String(ticket?.status || "");
+      const allowed = !hasStateGuard ||
+        (requestedStatus === "diagnosing" && ["received", "reviewing"].includes(currentStatus)) ||
+        (requestedStatus === "ready" && currentStatus === "repairing") ||
+        (requestedStatus === "completed" && currentStatus === "ready");
+
+      if (hasStateGuard && requestedStatus === "repairing") {
+        await safeAnswerCallback(context, callbackQuery.id, "Repair starts automatically after confirmed quote payment.");
+        await context.call("sendMessage", {
+          chat_id: callbackChatId,
+          text: `💳 ${referenceCode} will move to repairing automatically after the approved quote payment is confirmed.`,
+          ...(ticket ? { reply_markup: adminTicketKeyboard(ticket) } : {})
+        });
+        return;
+      }
+
+      if (!allowed) {
+        await safeAnswerCallback(context, callbackQuery.id, `Current status is ${currentStatus}.`);
+        await context.call("sendMessage", {
+          chat_id: callbackChatId,
+          text: `⚠️ ${referenceCode} cannot move from ${currentStatus} to ${requestedStatus}.`,
+          ...(ticket ? { reply_markup: adminTicketKeyboard(ticket) } : {})
+        });
+        return;
+      }
+
       const notes: Record<string, string> = {
         diagnosing: "Device inspection started.",
-        repairing: "Repair work started.",
         ready: "Repair is complete and ready for pickup or delivery.",
         completed: "Repair delivered and ticket completed."
       };
       const ok = context.repairUpdate
-        ? await context.repairUpdate(referenceCode, status, notes[status] || "")
+        ? await context.repairUpdate(referenceCode, requestedStatus, notes[requestedStatus] || "")
         : false;
 
       await safeAnswerCallback(
         context,
         callbackQuery.id,
-        ok ? `Repair updated to ${status} ✅` : "Repair update failed."
+        ok ? `Repair updated to ${requestedStatus} ✅` : "Repair update failed."
       );
+
+      const refreshed = ok && context.adminRepairTicket
+        ? await context.adminRepairTicket(referenceCode)
+        : null;
       await context.call("sendMessage", {
         chat_id: callbackChatId,
         text: ok
-          ? `✅ ${referenceCode} updated to ${status}. Customer notification sent.`
-          : `⚠️ Could not update ${referenceCode}. Check the ticket and try again.`
+          ? `✅ ${referenceCode} updated to ${requestedStatus}. Customer notification sent.`
+          : `⚠️ Could not update ${referenceCode}. Check the ticket and try again.`,
+        ...(refreshed ? { reply_markup: adminTicketKeyboard(refreshed) } : {})
       });
       return;
     }
@@ -517,6 +583,30 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
         chat_id: callbackChatId,
         text: ["⏱ MR MOBILES SLA", `Reference: ${referenceCode}`, "", "Reply with SLA hours (1-720).", "Example: 24"].join("\n"),
         reply_markup: { force_reply: true, selective: true, input_field_placeholder: "SLA hours" }
+      });
+      return;
+    }
+
+    if (warrantyQuickMatch) {
+      const referenceCode = warrantyQuickMatch[1].toUpperCase();
+      const days = Number(warrantyQuickMatch[2]);
+      const ok = context.createWarranty
+        ? await context.createWarranty(referenceCode, days, "Mr Mobiles service warranty.")
+        : false;
+      await safeAnswerCallback(
+        context,
+        callbackQuery.id,
+        ok ? `${days}-day warranty issued ✅` : "Warranty could not be issued."
+      );
+      const refreshed = context.adminRepairTicket
+        ? await context.adminRepairTicket(referenceCode)
+        : null;
+      await context.call("sendMessage", {
+        chat_id: callbackChatId,
+        text: ok
+          ? `🛡 Warranty created for ${referenceCode}: ${days} days. Customer notification sent.`
+          : `⚠️ Warranty could not be created for ${referenceCode}. Repair must be completed first.`,
+        ...(refreshed ? { reply_markup: adminTicketKeyboard(refreshed) } : {})
       });
       return;
     }
@@ -559,7 +649,8 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
         return;
       }
 
-      const target = Number(replyMatch[2]);
+      const referenceCode = replyMatch[2] ? replyMatch[2].toUpperCase() : "";
+      const target = Number(replyMatch[3]);
       if (!Number.isSafeInteger(target) || target <= 0) {
         await safeAnswerCallback(context, callbackQuery.id, "Invalid customer ID.");
         return;
@@ -569,12 +660,17 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
         try {
           await context.call("sendMessage", {
             chat_id: target,
-            text: `💬 Mr Mobiles Support\n\n${DEFAULT_REPAIR_REPLY}`
+            text: [
+              "💬 Mr Mobiles Support",
+              referenceCode ? `Repair: ${referenceCode}` : "",
+              "",
+              DEFAULT_REPAIR_REPLY
+            ].filter(Boolean).join("\n")
           });
           await safeAnswerCallback(context, callbackQuery.id, "Default reply sent ✅");
           await context.call("sendMessage", {
             chat_id: callbackChatId,
-            text: `✅ Default reply sent to customer ${target}.`
+            text: `✅ Default reply sent${referenceCode ? ` for ${referenceCode}` : ""} to customer ${target}.`
           });
         } catch {
           await safeAnswerCallback(context, callbackQuery.id, "Reply could not be delivered.");
@@ -587,6 +683,7 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
         chat_id: callbackChatId,
         text: [
           "↩️ MR MOBILES reply",
+          referenceCode ? `Reference: ${referenceCode}` : "",
           `Customer ID: ${target}`,
           "",
           "Suggested reply:",
@@ -946,7 +1043,7 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
     const replyPrompt = typeof message?.reply_to_message?.text === "string"
       ? message.reply_to_message.text
       : "";
-    const targetMatch = replyPrompt.match(/^↩️ MR MOBILES reply\nCustomer ID: (\d+)\n/);
+    const targetMatch = replyPrompt.match(/^↩️ MR MOBILES reply\n(?:Reference: (MRR-[A-F0-9]{10})\n)?Customer ID: (\d+)\n/i);
     const quoteTargetMatch = replyPrompt.match(/^💰 MR MOBILES quote\nReference: (MRR-[A-F0-9]{10})\n/i);
     const assignTargetMatch = replyPrompt.match(/^👨‍🔧 MR MOBILES technician\nReference: (MRR-[A-F0-9]{10})\n/i);
     const slaTargetMatch = replyPrompt.match(/^⏱ MR MOBILES SLA\nReference: (MRR-[A-F0-9]{10})\n/i);
@@ -1030,16 +1127,22 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
     }
 
     if (targetMatch && context.admins.includes(senderId) && adminReply && !adminReply.startsWith("/")) {
-      const target = Number(targetMatch[1]);
+      const referenceCode = targetMatch[1] ? targetMatch[1].toUpperCase() : "";
+      const target = Number(targetMatch[2]);
       if (Number.isSafeInteger(target) && target > 0 && adminReply.length <= 3000) {
         try {
           await context.call("sendMessage", {
             chat_id: target,
-            text: `💬 Mr Mobiles Support\n\n${adminReply}`
+            text: [
+              "💬 Mr Mobiles Support",
+              referenceCode ? `Repair: ${referenceCode}` : "",
+              "",
+              adminReply
+            ].filter(Boolean).join("\n")
           });
           await context.call("sendMessage", {
             chat_id: message.chat.id,
-            text: `✅ Reply sent to customer ${target}.`
+            text: `✅ Reply sent${referenceCode ? ` for ${referenceCode}` : ""} to customer ${target}.`
           });
         } catch {
           await context.call("sendMessage", {
