@@ -191,8 +191,10 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const businessChatId = Number(businessMessage?.chat?.id);
     const callTelegram = async (method: string, body: Record<string, unknown>) => {
-      const businessAwareBody = businessConnectionId && ["sendMessage", "sendChatAction"].includes(method)
+      const sameBusinessChat = Number.isSafeInteger(businessChatId) && Number(body.chat_id) === businessChatId;
+      const businessAwareBody = businessConnectionId && sameBusinessChat && ["sendMessage", "sendChatAction"].includes(method)
         ? { ...body, business_connection_id: businessConnectionId }
         : body;
       const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
