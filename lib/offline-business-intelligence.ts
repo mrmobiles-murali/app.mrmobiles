@@ -185,10 +185,10 @@ export function classifyOfflineIntent(message: string): { intent: OfflineIntent;
   const productHits = PRODUCT_WORDS.reduce((sum, word) => sum + (text.includes(word) ? 1 : 0), 0);
   const compare = /compare|difference|vs\b|versus|which is better/i.test(message);
 
+  if (compare && productHits > 0) return { intent: "compare", confidence: 0.93 };
   if (repairHits > 0) {
     return { intent: "repair", confidence: Math.min(0.99, 0.82 + repairHits * 0.04) };
   }
-  if (compare && productHits > 0) return { intent: "compare", confidence: 0.93 };
   if (productHits > 0 || extractOfflineBudgetPaise(message)) {
     return { intent: "product_search", confidence: 0.9 };
   }
