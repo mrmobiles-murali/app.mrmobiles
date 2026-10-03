@@ -119,6 +119,8 @@ function status(request: NextRequest) {
     technicianAssignment: true,
     repairSlaTracking: true,
     serviceWarranties: true,
+    inventoryAdminControls: true,
+    generatedCatalogVisuals: true,
     inventorySource: "supabase",
     miniAppUrl: config.appUrl, commands: BOT_COMMANDS
   };
@@ -531,6 +533,7 @@ export async function POST(request: NextRequest) {
             ticket.sla_due_at &&
             new Date(ticket.sla_due_at).getTime() < Date.now()
           ).length,
+          unknownStock: (productsResult.data || []).filter(product => product.stock_qty == null).length,
           recentRepairs: repairs.filter(ticket => openStatuses.has(ticket.status)).slice(0, 5)
         };
       },
@@ -609,6 +612,28 @@ export async function POST(request: NextRequest) {
           // Warranty record is authoritative even if Telegram delivery is temporarily unavailable.
         }
         return true;
+      },
+      async inventoryAdmin() {
+        const { data, error } = await getSupabaseAdmin().from("products")
+          .select("id,name,stock_qty")
+          .eq("active", true)
+          .order("name", { ascending: true })
+          .limit(100);
+        if (error) throw new Error("Inventory lookup failed.");
+        return (data || []).map(item => ({
+          id: item.id,
+          name: item.name,
+          stockQty: item.stock_qty
+        }));
+      },
+      async updateStock(productId, qty) {
+        const { data, error } = await getSupabaseAdmin().from("products")
+          .update({ stock_qty: qty, updated_at: new Date().toISOString() })
+          .eq("id", productId)
+          .eq("active", true)
+          .select("id")
+          .maybeSingle();
+        return !error && Boolean(data);
       },
       async orders(userId) {
         const { data, error } = await getSupabaseAdmin().from("orders")
