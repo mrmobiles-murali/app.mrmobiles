@@ -568,7 +568,7 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
       ? await context.repairIntake(userId, name || "Customer", details)
       : null;
 
-    const serviceUrl = new URL(context.appUrl);
+    const serviceUrl = new URL(versionedMiniAppUrl(context.appUrl));
     serviceUrl.searchParams.set("category", "service");
 
     await send({
