@@ -488,7 +488,8 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
     const quotePromptMatch = callbackData.match(/^repair_quote_prompt:(MRR-[A-F0-9]{10})$/i);
     const assignPromptMatch = callbackData.match(/^repair_assign_prompt:(MRR-[A-F0-9]{10})$/i);
     const slaPromptMatch = callbackData.match(/^repair_sla_prompt:(MRR-[A-F0-9]{10})$/i);
-    const warrantyPromptMatch = callbackData.match(/^warranty_prompt:(MRR-[A-F0-9]{10})$/i);\n    const warrantyQuickMatch = callbackData.match(/^warranty_quick:(MRR-[A-F0-9]{10}):(30|90|180)$/i);
+    const warrantyPromptMatch = callbackData.match(/^warranty_prompt:(MRR-[A-F0-9]{10})$/i);
+    const warrantyQuickMatch = callbackData.match(/^warranty_quick:(MRR-[A-F0-9]{10}):(30|90|180)$/i);
 
     if (repairActionMatch || quotePromptMatch || assignPromptMatch || slaPromptMatch || warrantyPromptMatch || warrantyQuickMatch) {
       if (!context.admins.includes(adminId)) {
@@ -647,7 +648,8 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
         return;
       }
 
-      const referenceCode = replyMatch[2] ? replyMatch[2].toUpperCase() : "";\n      const target = Number(replyMatch[3]);
+      const referenceCode = replyMatch[2] ? replyMatch[2].toUpperCase() : "";
+      const target = Number(replyMatch[3]);
       if (!Number.isSafeInteger(target) || target <= 0) {
         await safeAnswerCallback(context, callbackQuery.id, "Invalid customer ID.");
         return;
@@ -1124,7 +1126,8 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
     }
 
     if (targetMatch && context.admins.includes(senderId) && adminReply && !adminReply.startsWith("/")) {
-      const referenceCode = targetMatch[1] ? targetMatch[1].toUpperCase() : "";\n      const target = Number(targetMatch[2]);
+      const referenceCode = targetMatch[1] ? targetMatch[1].toUpperCase() : "";
+      const target = Number(targetMatch[2]);
       if (Number.isSafeInteger(target) && target > 0 && adminReply.length <= 3000) {
         try {
           await context.call("sendMessage", {
