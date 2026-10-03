@@ -105,6 +105,12 @@ function status(request: NextRequest) {
     profileSelfHeal: true,
     adminRepairControls: true,
     repairLifecycleNotifications: true,
+    accountSummary: true,
+    loyaltyPoints: true,
+    referralAttribution: true,
+    adminDashboard: true,
+    photoRepairIntake: true,
+    telegramBusinessUpdatesReady: true,
     inventorySource: "supabase",
     miniAppUrl: config.appUrl, commands: BOT_COMMANDS
   };
@@ -142,8 +148,16 @@ export async function POST(request: NextRequest) {
 
     // Self-heal the Telegram webhook subscription after a signed /start update.
     // This is idempotent, preserves pending updates and never exposes the bot token.
-    const incomingText = typeof (update as any)?.message?.text === "string"
-      ? (update as any).message.text.trim()
+    const businessMessage = (update as any)?.business_message;
+    const normalizedUpdate = businessMessage
+      ? { ...(update as any), message: businessMessage }
+      : update;
+    const businessConnectionId = typeof businessMessage?.business_connection_id === "string"
+      ? businessMessage.business_connection_id
+      : undefined;
+
+    const incomingText = typeof (normalizedUpdate as any)?.message?.text === "string"
+      ? (normalizedUpdate as any).message.text.trim()
       : "";
     const incomingCommand = incomingText.split(/\s+/)[0]?.split("@")[0]?.toLowerCase();
     if (incomingCommand === "/start") {
@@ -156,7 +170,15 @@ export async function POST(request: NextRequest) {
         body: JSON.stringify({
           url: webhookUrl.toString(),
           secret_token: secret,
-          allowed_updates: ["message", "inline_query", "callback_query"],
+          allowed_updates: [
+            "message",
+            "inline_query",
+            "callback_query",
+            "business_connection",
+            "business_message",
+            "edited_business_message",
+            "deleted_business_messages"
+          ],
           max_connections: 5,
           drop_pending_updates: false
         }),
@@ -169,10 +191,15 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const businessChatId = Number(businessMessage?.chat?.id);
     const callTelegram = async (method: string, body: Record<string, unknown>) => {
+      const sameBusinessChat = Number.isSafeInteger(businessChatId) && Number(body.chat_id) === businessChatId;
+      const businessAwareBody = businessConnectionId && sameBusinessChat && ["sendMessage", "sendChatAction"].includes(method)
+        ? { ...body, business_connection_id: businessConnectionId }
+        : body;
       const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body), cache: "no-store", signal: AbortSignal.timeout(12000)
+        body: JSON.stringify(businessAwareBody), cache: "no-store", signal: AbortSignal.timeout(12000)
       });
       const data = await response.json();
       if (!response.ok || data?.ok !== true) throw new TelegramError(Number(data?.error_code || response.status));
@@ -180,7 +207,12 @@ export async function POST(request: NextRequest) {
     };
 
     let botUsername: string | undefined;
-    if ((update as any)?.inline_query || isRepairRushUpdate(update)) {
+    const needsBotUsername =
+      Boolean((normalizedUpdate as any)?.inline_query) ||
+      isRepairRushUpdate(normalizedUpdate) ||
+      incomingCommand === "/refer" ||
+      (normalizedUpdate as any)?.callback_query?.data === "refer_link";
+    if (needsBotUsername) {
       const me = await callTelegram("getMe", {}) as any;
       if (typeof me?.username === "string") botUsername = me.username;
     }
@@ -188,7 +220,7 @@ export async function POST(request: NextRequest) {
     const config = settings(request);
     // BotFather registered this game to @MrMobileDoctor_bot. Do not try to
     // launch it with another bot's token, even if an optional URL was set.
-    if (isRepairRushUpdate(update) && botUsername?.toLowerCase() !== REPAIR_RUSH_BOT_USERNAME.toLowerCase()) {
+    if (isRepairRushUpdate(normalizedUpdate) && botUsername?.toLowerCase() !== REPAIR_RUSH_BOT_USERNAME.toLowerCase()) {
       config.gameUrl = undefined;
     }
 
@@ -214,7 +246,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    await handleBotUpdate(update, {
+    await handleBotUpdate(normalizedUpdate, {
       ...config,
       botUsername,
       call: callTelegram,
@@ -241,7 +273,7 @@ export async function POST(request: NextRequest) {
           return false;
         }
       },
-      async repairIntake(userId, name, details) {
+      async repairIntake(userId, name, details, photoFileId) {
         try {
           const ticket = await createTelegramRepairTicket({
             telegramUserId: userId,
@@ -251,20 +283,30 @@ export async function POST(request: NextRequest) {
 
           if (config.supportChatId && config.admins.length) {
             try {
-              await callTelegram("sendMessage", {
-                chat_id: config.supportChatId,
-                text: [
-                  "🛠 New repair ticket",
-                  `Reference: ${ticket.reference_code}`,
-                  `Name: ${name}`,
-                  `Customer ID: ${userId}`,
-                  `Device: ${[ticket.device_brand, ticket.device_model].filter(Boolean).join(" ")}`,
-                  `Issue: ${ticket.issue_or_condition}`,
-                  "",
-                  "Tap an action below — customer ID and repair reference are already linked."
-                ].join("\n"),
-                reply_markup: repairAdminKeyboard(ticket.reference_code, userId)
-              });
+              const adminText = [
+                "🛠 New repair ticket",
+                `Reference: ${ticket.reference_code}`,
+                `Name: ${name}`,
+                `Customer ID: ${userId}`,
+                `Device: ${[ticket.device_brand, ticket.device_model].filter(Boolean).join(" ")}`,
+                `Issue: ${ticket.issue_or_condition}`,
+                "",
+                "Tap an action below — customer ID and repair reference are already linked."
+              ].join("\n");
+              if (photoFileId) {
+                await callTelegram("sendPhoto", {
+                  chat_id: config.supportChatId,
+                  photo: photoFileId,
+                  caption: adminText,
+                  reply_markup: repairAdminKeyboard(ticket.reference_code, userId)
+                });
+              } else {
+                await callTelegram("sendMessage", {
+                  chat_id: config.supportChatId,
+                  text: adminText,
+                  reply_markup: repairAdminKeyboard(ticket.reference_code, userId)
+                });
+              }
             } catch {
               // Ticket remains valid even if the admin notification is temporarily unavailable.
             }
@@ -365,6 +407,91 @@ export async function POST(request: NextRequest) {
           }
         }
         return true;
+      },
+      async accountSummary(userId) {
+        const supabase = getSupabaseAdmin();
+        const [{ data: orders, error: orderError }, { data: repairs, error: repairError }] = await Promise.all([
+          supabase.from("orders")
+            .select("amount_paise,status")
+            .eq("telegram_user_id", userId)
+            .limit(500),
+          supabase.from("service_requests")
+            .select("device_brand,device_model,status")
+            .eq("request_type", "repair")
+            .eq("source", "telegram")
+            .eq("telegram_user_id", userId)
+            .limit(500)
+        ]);
+        if (orderError || repairError) throw new Error("Account summary lookup failed.");
+        const paid = (orders || []).filter(order => order.status === "paid");
+        const paidSpendPaise = paid.reduce((sum, order) => sum + Number(order.amount_paise || 0), 0);
+        const activeStatuses = new Set(["received","reviewing","diagnosing","awaiting_approval","approved","repairing","ready"]);
+        const devices = new Set((repairs || [])
+          .map(ticket => [ticket.device_brand, ticket.device_model].filter(Boolean).join(" ").trim())
+          .filter(Boolean));
+        return {
+          orderCount: (orders || []).length,
+          paidOrderCount: paid.length,
+          paidSpendPaise,
+          loyaltyPoints: Math.floor(paidSpendPaise / 10000),
+          repairCount: (repairs || []).length,
+          activeRepairs: (repairs || []).filter(ticket => activeStatuses.has(ticket.status)).length,
+          savedDevices: devices.size
+        };
+      },
+      async recordReferral(referredUserId, referrerUserId, source = "bot_start") {
+        if (referredUserId === referrerUserId) return false;
+        const { error } = await getSupabaseAdmin().from("telegram_referrals").insert({
+          referred_user_id: referredUserId,
+          referrer_user_id: referrerUserId,
+          source
+        });
+        if (!error) return true;
+        return error.code === "23505";
+      },
+      async adminDashboard() {
+        const supabase = getSupabaseAdmin();
+        const [ordersResult, repairsResult, productsResult, referralsResult, feedbackResult] = await Promise.all([
+          supabase.from("orders").select("amount_paise,status,workflow_status").limit(1000),
+          supabase.from("service_requests")
+            .select("reference_code,customer_name,telegram_user_id,device_brand,device_model,issue_or_condition,status,quoted_amount_paise,status_note,created_at,updated_at")
+            .eq("request_type", "repair")
+            .order("created_at", { ascending: false })
+            .limit(200),
+          supabase.from("products").select("stock_qty,active").eq("active", true).limit(500),
+          supabase.from("telegram_referrals").select("id").limit(1000),
+          supabase.from("ai_feedback").select("rating").limit(1000)
+        ]);
+        if (ordersResult.error || repairsResult.error || productsResult.error || referralsResult.error || feedbackResult.error) {
+          throw new Error("Admin dashboard lookup failed.");
+        }
+        const orders = ordersResult.data || [];
+        const repairs = repairsResult.data || [];
+        const paid = orders.filter(order => order.status === "paid");
+        const openStatuses = new Set(["received","reviewing","diagnosing","awaiting_approval","approved","repairing","ready"]);
+        return {
+          orderCount: orders.length,
+          paidOrderCount: paid.length,
+          revenuePaise: paid.reduce((sum, order) => sum + Number(order.amount_paise || 0), 0),
+          paymentIssues: orders.filter(order => order.status === "payment_failed" || order.workflow_status === "payment_issue").length,
+          openRepairs: repairs.filter(ticket => openStatuses.has(ticket.status)).length,
+          awaitingApproval: repairs.filter(ticket => ticket.status === "awaiting_approval").length,
+          readyRepairs: repairs.filter(ticket => ticket.status === "ready").length,
+          lowStock: (productsResult.data || []).filter(product => typeof product.stock_qty === "number" && product.stock_qty <= 2).length,
+          referralCount: (referralsResult.data || []).length,
+          positiveFeedback: (feedbackResult.data || []).filter(item => item.rating === 1).length,
+          negativeFeedback: (feedbackResult.data || []).filter(item => item.rating === -1).length,
+          recentRepairs: repairs.filter(ticket => openStatuses.has(ticket.status)).slice(0, 5)
+        };
+      },
+      async adminRepairTicket(referenceCode) {
+        const { data, error } = await getSupabaseAdmin().from("service_requests")
+          .select("reference_code,customer_name,telegram_user_id,device_brand,device_model,issue_or_condition,status,quoted_amount_paise,status_note,created_at,updated_at")
+          .eq("request_type", "repair")
+          .eq("reference_code", referenceCode)
+          .maybeSingle();
+        if (error) throw new Error("Admin repair lookup failed.");
+        return data || null;
       },
       async orders(userId) {
         const { data, error } = await getSupabaseAdmin().from("orders")

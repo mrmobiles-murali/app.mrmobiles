@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 
-export const BOT_WORKFLOW_VERSION = "2026-10-03.admin-repair-controls";
+export const BOT_WORKFLOW_VERSION = "2026-10-03.fulfillment-sprint";
 export const REPAIR_RUSH_SHORT_NAME = "repairrush";
 export const REPAIR_RUSH_BOT_USERNAME = "MrMobileDoctor_bot";
 export const DEFAULT_REPAIR_REPLY = [
@@ -18,6 +18,9 @@ export const BOT_COMMANDS = [
   { command: "repairs", description: "View your repair tickets" },
   { command: "repairstatus", description: "Track a repair reference" },
   { command: "orders", description: "View your recent orders" },
+  { command: "account", description: "Open your Mr Mobiles account" },
+  { command: "refer", description: "Get your Mr Mobiles referral link" },
+  { command: "paysupport", description: "Get payment support" },
   { command: "support", description: "Contact the Mr Mobiles team" },
   { command: "privacy", description: "AI chat and privacy information" },
   { command: "help", description: "See how to use this bot" },
@@ -93,6 +96,36 @@ export type RepairTicketSummary = {
   updated_at?: string;
 };
 
+export type AccountSummary = {
+  orderCount: number;
+  paidOrderCount: number;
+  paidSpendPaise: number;
+  loyaltyPoints: number;
+  repairCount: number;
+  activeRepairs: number;
+  savedDevices: number;
+};
+
+export type AdminRepairTicket = RepairTicketSummary & {
+  telegram_user_id?: number | null;
+  customer_name?: string | null;
+};
+
+export type AdminDashboardSummary = {
+  orderCount: number;
+  paidOrderCount: number;
+  revenuePaise: number;
+  paymentIssues: number;
+  openRepairs: number;
+  awaitingApproval: number;
+  readyRepairs: number;
+  lowStock: number;
+  referralCount: number;
+  positiveFeedback: number;
+  negativeFeedback: number;
+  recentRepairs: AdminRepairTicket[];
+};
+
 export type InlineProduct = {
   id: string;
   name: string;
@@ -131,7 +164,11 @@ export type BotContext = {
     onDraft?: (partial: string) => Promise<void>
   ) => Promise<AiAssistantReply>;
   handoff?: (userId: number, name: string) => Promise<boolean>;
-  repairIntake?: (userId: number, name: string, details: string) => Promise<{ referenceCode: string } | null>;
+  repairIntake?: (userId: number, name: string, details: string, photoFileId?: string) => Promise<{ referenceCode: string } | null>;
+  accountSummary?: (userId: number) => Promise<AccountSummary>;
+  recordReferral?: (referredUserId: number, referrerUserId: number, source?: "bot_start" | "mini_app") => Promise<boolean>;
+  adminDashboard?: () => Promise<AdminDashboardSummary>;
+  adminRepairTicket?: (referenceCode: string) => Promise<AdminRepairTicket | null>;
   repairs?: (userId: number) => Promise<RepairTicketSummary[]>;
   repairStatus?: (userId: number, referenceCode: string) => Promise<RepairTicketSummary | null>;
   repairUpdate?: (referenceCode: string, status: string, note: string) => Promise<boolean>;
@@ -229,12 +266,85 @@ function repairStatusText(ticket: RepairTicketSummary): string {
   ].filter(Boolean).join("\n");
 }
 
-function homeKeyboard(context: BotContext) {
+function accountSummaryText(summary: AccountSummary): string {
+  return [
+    "👤 Mr Mobiles Account",
+    "",
+    `Orders: ${summary.orderCount} • Paid: ${summary.paidOrderCount}`,
+    `Paid spend: ${formatInr(summary.paidSpendPaise)}`,
+    `MR Points: ${summary.loyaltyPoints} (1 point / ₹100 paid)`,
+    `Repairs: ${summary.repairCount} • Active: ${summary.activeRepairs}`,
+    `Saved devices: ${summary.savedDevices}`
+  ].join("\n");
+}
+
+function adminDashboardText(summary: AdminDashboardSummary): string {
+  return [
+    "📊 Mr Mobiles Admin",
+    "",
+    `Orders: ${summary.orderCount} • Paid: ${summary.paidOrderCount}`,
+    `Revenue: ${formatInr(summary.revenuePaise)}`,
+    `Payment issues: ${summary.paymentIssues}`,
+    "",
+    `Open repairs: ${summary.openRepairs}`,
+    `Awaiting approval: ${summary.awaitingApproval}`,
+    `Ready: ${summary.readyRepairs}`,
+    `Low stock: ${summary.lowStock}`,
+    `Referrals: ${summary.referralCount}`,
+    `AI feedback: 👍 ${summary.positiveFeedback} • 👎 ${summary.negativeFeedback}`
+  ].join("\n");
+}
+
+function adminTicketKeyboard(ticket: AdminRepairTicket) {
+  const rows: Array<Array<Record<string, unknown>>> = [
+    [
+      { text: "🔎 Diagnosing", callback_data: `repair_admin:${ticket.reference_code}:diagnosing` },
+      { text: "💰 Quote", callback_data: `repair_quote_prompt:${ticket.reference_code}` }
+    ],
+    [
+      { text: "🔧 Repairing", callback_data: `repair_admin:${ticket.reference_code}:repairing` },
+      { text: "📦 Ready", callback_data: `repair_admin:${ticket.reference_code}:ready` }
+    ],
+    [{ text: "✅ Completed", callback_data: `repair_admin:${ticket.reference_code}:completed` }]
+  ];
+  const customerId = Number(ticket.telegram_user_id);
+  if (Number.isSafeInteger(customerId) && customerId > 0) {
+    rows.push([
+      { text: "⚡ Default Reply", callback_data: `reply_default:${customerId}` },
+      { text: "✍️ Custom Reply", callback_data: `reply_customer:${customerId}` }
+    ]);
+  }
+  rows.push([{ text: "⬅️ Admin Dashboard", callback_data: "admin_dashboard" }]);
+  return { inline_keyboard: rows };
+}
+
+function adminRepairText(ticket: AdminRepairTicket): string {
+  return [
+    `🛠 ${ticket.reference_code}`,
+    [ticket.device_brand, ticket.device_model].filter(Boolean).join(" "),
+    `Customer: ${ticket.customer_name || "Telegram customer"}`,
+    `Issue: ${ticket.issue_or_condition}`,
+    `Status: ${ticket.status}`,
+    typeof ticket.quoted_amount_paise === "number" ? `Quote: ${formatInr(ticket.quoted_amount_paise)}` : "",
+    ticket.status_note ? `Note: ${ticket.status_note}` : ""
+  ].filter(Boolean).join("\n");
+}
+
+function referralLink(context: BotContext, userId: number): string | null {
+  const username = context.botUsername?.replace(/^@/, "");
+  return username ? `https://t.me/${username}?start=ref_${userId}` : null;
+}
+
+function homeKeyboard(context: BotContext, isAdmin = false) {
   return {
     inline_keyboard: [
       [
         { text: "🛍 Shop", web_app: { url: versionedMiniAppUrl(context.appUrl) } },
         { text: "🤖 AI Help", callback_data: "ai_help" }
+      ],
+      [
+        { text: "👤 My Account", callback_data: "account_summary" },
+        { text: "🎁 Refer", callback_data: "refer_link" }
       ],
       [
         { text: "🧾 Orders", callback_data: "orders_latest" },
@@ -243,6 +353,7 @@ function homeKeyboard(context: BotContext) {
       [
         { text: "👤 Human Support", callback_data: "human_support" }
       ],
+      ...(isAdmin ? [[{ text: "📊 Admin Control Centre", callback_data: "admin_dashboard" }]] : []),
       ...(context.gameUrl ? [[{ text: "🎮 Repair Rush", callback_data: "repairrush_play" }]] : [])
     ]
   };
@@ -407,6 +518,73 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
     const chatId = callbackQuery.message.chat.id as number;
     const data = typeof callbackQuery.data === "string" ? callbackQuery.data : "";
 
+    if (data === "account_summary") {
+      await safeAnswerCallback(context, callbackQuery.id, "Loading your account…");
+      const summary = context.accountSummary ? await context.accountSummary(userId) : null;
+      await context.call("sendMessage", {
+        chat_id: chatId,
+        text: summary ? accountSummaryText(summary) : "Your account summary is temporarily unavailable.",
+        reply_markup: homeKeyboard(context, context.admins.includes(userId))
+      });
+      return;
+    }
+
+    if (data === "refer_link") {
+      await safeAnswerCallback(context, callbackQuery.id, "Preparing your referral link…");
+      const link = referralLink(context, userId);
+      await context.call("sendMessage", {
+        chat_id: chatId,
+        text: link
+          ? `🎁 Mr Mobiles Referral\n\nShare this link:\n${link}\n\nWhen a new customer starts Mr Mobiles through your link, the referral is recorded.`
+          : "Use /refer to generate your referral link."
+      });
+      return;
+    }
+
+    if (data === "admin_dashboard") {
+      if (!context.admins.includes(userId)) {
+        await safeAnswerCallback(context, callbackQuery.id, "This action is for the Mr Mobiles support team.");
+        return;
+      }
+      await safeAnswerCallback(context, callbackQuery.id, "Loading admin dashboard…");
+      const dashboard = context.adminDashboard ? await context.adminDashboard() : null;
+      if (!dashboard) {
+        await context.call("sendMessage", { chat_id: chatId, text: "Admin dashboard is temporarily unavailable." });
+        return;
+      }
+      const rows = dashboard.recentRepairs.slice(0, 5).map(ticket => [{
+        text: `🛠 ${ticket.reference_code} • ${ticket.status}`,
+        callback_data: `admin_ticket:${ticket.reference_code}`
+      }]);
+      rows.push([{ text: "🔄 Refresh", callback_data: "admin_dashboard" }]);
+      await context.call("sendMessage", {
+        chat_id: chatId,
+        text: adminDashboardText(dashboard),
+        reply_markup: { inline_keyboard: rows }
+      });
+      return;
+    }
+
+    if (data.startsWith("admin_ticket:")) {
+      if (!context.admins.includes(userId)) {
+        await safeAnswerCallback(context, callbackQuery.id, "This action is for the Mr Mobiles support team.");
+        return;
+      }
+      const referenceCode = data.slice("admin_ticket:".length).toUpperCase();
+      const ticket = /^MRR-[A-F0-9]{10}$/.test(referenceCode) && context.adminRepairTicket
+        ? await context.adminRepairTicket(referenceCode)
+        : null;
+      await safeAnswerCallback(context, callbackQuery.id, ticket ? "Repair ticket opened." : "Repair ticket not found.");
+      if (ticket) {
+        await context.call("sendMessage", {
+          chat_id: chatId,
+          text: adminRepairText(ticket),
+          reply_markup: adminTicketKeyboard(ticket)
+        });
+      }
+      return;
+    }
+
     if (data === "repairrush_play") {
       await safeAnswerCallback(context, callbackQuery.id);
       await context.call(context.gameUrl ? "sendGame" : "sendMessage", context.gameUrl
@@ -499,7 +677,7 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
       await safeAnswerCallback(context, callbackQuery.id, "Repair assistant ready");
       await context.call("sendMessage", {
         chat_id: chatId,
-        text: "🛠️ Repair Diagnosis\n\nReply with:\n• Brand\n• Exact model\n• Problem / damage\n\nExample: Samsung S23 — display cracked and touch not working.\n\nFinal diagnosis and price are confirmed after inspection.",
+        text: "🛠️ Repair Diagnosis\n\nReply with:\n• Brand\n• Exact model\n• Problem / damage\n• Optional device photo\n\nExample: Samsung S23 — display cracked and touch not working.\n\nFinal diagnosis and price are confirmed after inspection.",
         reply_markup: {
           force_reply: true,
           input_field_placeholder: "Brand + model + problem"
@@ -720,7 +898,12 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
 
   const chatId = message.chat.id as number;
   const userId = message.from.id as number;
-  const text = typeof message.text === "string" ? message.text.trim() : "";
+  const text = typeof message.text === "string"
+    ? message.text.trim()
+    : (typeof message.caption === "string" ? message.caption.trim() : "");
+  const photoFileId = Array.isArray(message.photo) && message.photo.length
+    ? message.photo[message.photo.length - 1]?.file_id
+    : undefined;
   const command = text.split(/\s+/)[0].split("@")[0].toLowerCase();
   const argument = text.replace(/^\S+\s*/, "");
   if (command === "/game" || (command === "/start" && argument === REPAIR_RUSH_SHORT_NAME)) {
@@ -742,10 +925,10 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
     : "";
   const isRepairIntakeReply = repliedPrompt.startsWith("🛠️ Repair Diagnosis");
 
-  if (isRepairIntakeReply && text && !text.startsWith("/")) {
+  if (isRepairIntakeReply && (text || photoFileId) && !text.startsWith("/")) {
     if (text.length < 6) {
       await send({
-        text: "🛠️ Please send a little more detail — brand, exact model and the problem.\n\nExample: Samsung S23 — display cracked and touch not working.",
+        text: "🛠️ Please add a caption with brand, exact model and the problem. You can attach a device photo too.\n\nExample: Samsung S23 — display cracked and touch not working.",
         reply_markup: { force_reply: true, input_field_placeholder: "Brand + model + problem" }
       });
       return;
@@ -757,7 +940,7 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
       .slice(0, 160);
     const details = text.slice(0, 1200);
     const ticket = context.repairIntake
-      ? await context.repairIntake(userId, name || "Customer", details)
+      ? await context.repairIntake(userId, name || "Customer", details, photoFileId)
       : null;
 
     const serviceUrl = new URL(versionedMiniAppUrl(context.appUrl));
@@ -781,9 +964,54 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
   }
 
   if (command === "/start" || command === "/menu") {
+    let referralRecorded = false;
+    const referralMatch = command === "/start" ? argument.match(/^ref_(\d+)$/) : null;
+    const referrerUserId = Number(referralMatch?.[1]);
+    if (referralMatch && Number.isSafeInteger(referrerUserId) && referrerUserId > 0 && referrerUserId !== userId && context.recordReferral) {
+      referralRecorded = await context.recordReferral(userId, referrerUserId, "bot_start");
+    }
+
     await send({
-      text: "👋 Welcome to Mr Mobiles\n\nAI shopping, live stock, orders, repairs and human support — all from this chat.",
-      reply_markup: homeKeyboard(context)
+      text: [
+        "👋 Welcome to Mr Mobiles",
+        "",
+        "AI shopping, live stock, orders, repairs and human support — all from this chat.",
+        referralRecorded ? "🎁 Referral connected successfully." : ""
+      ].filter(Boolean).join("\n"),
+      reply_markup: homeKeyboard(context, isAdmin)
+    });
+  } else if (command === "/account") {
+    const summary = context.accountSummary ? await context.accountSummary(userId) : null;
+    await send({
+      text: summary ? accountSummaryText(summary) : "Your account summary is temporarily unavailable.",
+      reply_markup: homeKeyboard(context, isAdmin)
+    });
+  } else if (command === "/refer") {
+    const link = referralLink(context, userId);
+    await send({
+      text: link
+        ? `🎁 Mr Mobiles Referral\n\nShare this link:\n${link}\n\nNew customers who start the bot through this link are attributed to you.`
+        : "Referral link is temporarily unavailable. Please try /refer again."
+    });
+  } else if (command === "/admin") {
+    if (!isAdmin) {
+      await send({ text: "This command is available to the Mr Mobiles support team." });
+      return;
+    }
+    const dashboard = context.adminDashboard ? await context.adminDashboard() : null;
+    if (!dashboard) {
+      await send({ text: "Admin dashboard is temporarily unavailable." });
+      return;
+    }
+    const rows = dashboard.recentRepairs.slice(0, 5).map(ticket => [{
+      text: `🛠 ${ticket.reference_code} • ${ticket.status}`,
+      callback_data: `admin_ticket:${ticket.reference_code}`
+    }]);
+    rows.push([{ text: "🔄 Refresh", callback_data: "admin_dashboard" }]);
+    await send({ text: adminDashboardText(dashboard), reply_markup: { inline_keyboard: rows } });
+  } else if (command === "/paysupport") {
+    await send({
+      text: "💳 Payment Support\n\nFor failed, pending or duplicate payments, send /support followed by the order/payment issue. Never send card numbers, CVV, OTP or banking passwords."
     });
   } else if (command === "/shop") {
     await send({ text: "📱 Browse Mr Mobiles phones and accessories:", reply_markup: keyboard("Browse Shop") });
@@ -791,7 +1019,7 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
     const serviceUrl = new URL(versionedMiniAppUrl(context.appUrl));
     serviceUrl.searchParams.set("category", "service");
     await send({
-      text: "🛠️ Repair Help\n\nStart a guided diagnosis here, or browse repair services in the Mini App. Final repair work and pricing are confirmed after inspection.",
+      text: "🛠️ Repair Help\n\nStart a guided diagnosis here. You can reply with brand/model/problem or attach a device photo with that caption. Final diagnosis and pricing are confirmed after inspection.",
       reply_markup: {
         inline_keyboard: [
           [{ text: "🧰 Start Diagnosis", callback_data: "repair_start" }],
@@ -828,7 +1056,7 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
     });
   } else if (command === "/help") {
     const help = BOT_COMMANDS.map(c => `/${c.command} — ${c.description}`).join("\n");
-    await send({ text: `${help}\n\nYou can also just type a normal question to chat with the AI assistant.${isAdmin ? "\n\nAdmin tools:\n/reply CUSTOMER_ID message\n/repairupdate MRR-... STATUS note\n/repairquote MRR-... AMOUNT note" : ""}` });
+    await send({ text: `${help}\n\nYou can also just type a normal question to chat with the AI assistant.${isAdmin ? "\n\nAdmin tools:\n/admin — control centre\n/reply CUSTOMER_ID message\n/repairupdate MRR-... STATUS note\n/repairquote MRR-... AMOUNT note" : ""}` });
   } else if (command === "/orders") {
     const orders = await context.orders(userId);
     if (!orders.length) {

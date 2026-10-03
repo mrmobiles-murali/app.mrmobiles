@@ -23,6 +23,32 @@ type RepairItem = {
   updated_at: string;
 };
 
+type AccountOrder = {
+  id: string;
+  amount_paise: number;
+  status: string;
+  workflow_status?: string | null;
+  tracking_code?: string | null;
+  created_at: string;
+  paid_at?: string | null;
+  receipt_code: string;
+};
+
+type AccountSummary = {
+  orderCount: number;
+  paidOrderCount: number;
+  paidSpendPaise: number;
+  loyaltyPoints: number;
+  repairCount: number;
+  activeRepairs: number;
+  savedDevices: number;
+};
+
+type AccountData = {
+  summary: AccountSummary;
+  orders: AccountOrder[];
+};
+
 function money(paise: number) {
   return new Intl.NumberFormat("en-IN", {
     style: "currency",
@@ -39,6 +65,7 @@ export default function Home() {
   const [sessionReady, setSessionReady] = useState(false);
   const [paymentsEnabled, setPaymentsEnabled] = useState(false);
   const [repairs, setRepairs] = useState<RepairItem[]>([]);
+  const [account, setAccount] = useState<AccountData | null>(null);
   const [repairsOpen, setRepairsOpen] = useState(true);
   const [message, setMessage] = useState("");
 
@@ -163,12 +190,17 @@ export default function Home() {
         if (!r.ok) throw new Error(data.error || "Telegram session validation failed.");
         setSessionReady(true);
 
-        fetch("/api/telegram/repairs", {
+        fetch("/api/telegram/account", {
           method: "POST",
           headers: { "x-telegram-init-data": tg.initData }
         })
           .then((response) => response.ok ? response.json() : Promise.reject())
-          .then((repairData) => setRepairs(Array.isArray(repairData?.tickets) ? repairData.tickets : []))
+          .then((accountData) => {
+            setRepairs(Array.isArray(accountData?.repairs) ? accountData.repairs : []);
+            if (accountData?.summary && Array.isArray(accountData?.orders)) {
+              setAccount({ summary: accountData.summary, orders: accountData.orders });
+            }
+          })
           .catch(() => undefined);
 
         try {
@@ -447,14 +479,37 @@ export default function Home() {
       <section className="accountPanel">
           <button className="accountToggle" onClick={() => setRepairsOpen((value) => !value)}>
             <span>
-              <strong>My Repairs & Devices</strong>
-              <small>{sessionReady ? `${repairs.length} repairs · ${savedDevices.length} devices` : "Connecting securely to Telegram…"}</small>
+              <strong>My Mr Mobiles Account</strong>
+              <small>
+                {sessionReady
+                  ? `${account?.summary.orderCount ?? 0} orders · ${repairs.length} repairs · ${account?.summary.loyaltyPoints ?? 0} MR Points`
+                  : "Connecting securely to Telegram…"}
+              </small>
             </span>
             <span>{repairsOpen ? "−" : "+"}</span>
           </button>
           {repairsOpen && (
             <div className="accountBody">
-              {!sessionReady && <p>Open this Mini App from Mr Mobiles in Telegram to load your private repair history.</p>}
+              {!sessionReady && <p>Open this Mini App from Mr Mobiles in Telegram to load your private account.</p>}
+              {sessionReady && account && (
+                <>
+                  <h3>Account overview</h3>
+                  <div className="accountStats">
+                    <div><strong>{account.summary.loyaltyPoints}</strong><span>MR Points</span></div>
+                    <div><strong>{money(account.summary.paidSpendPaise)}</strong><span>Paid spend</span></div>
+                    <div><strong>{account.summary.activeRepairs}</strong><span>Active repairs</span></div>
+                  </div>
+                  <p className="accountNote">MR Points earn at 1 point per ₹100 of verified paid orders.</p>
+                  <h3>Recent orders & receipts</h3>
+                  {account.orders.length ? account.orders.slice(0, 5).map((order) => (
+                    <div className="repairItem" key={order.id}>
+                      <strong>{order.receipt_code}</strong>
+                      <span>{money(order.amount_paise)} · {order.status}{order.workflow_status ? ` · ${order.workflow_status.replaceAll("_", " ")}` : ""}</span>
+                      <em>{order.tracking_code || "Order receipt"}</em>
+                    </div>
+                  )) : <p>No Telegram orders yet.</p>}
+                </>
+              )}
               <h3>Repair history</h3>
               {sessionReady && repairs.length ? repairs.map((ticket) => (
                 <div className="repairItem" key={ticket.reference_code}>
@@ -467,6 +522,11 @@ export default function Home() {
               <div className="deviceList">
                 {sessionReady && savedDevices.length ? savedDevices.map((device) => <span key={device}>📱 {device}</span>) : sessionReady ? <p>Devices are saved automatically from repair history.</p> : null}
               </div>
+              {sessionReady && (
+                <p className="accountNote">
+                  Warranty terms depend on the specific product/service and are confirmed on the official bill or service document.
+                </p>
+              )}
             </div>
           )}
         </section>
