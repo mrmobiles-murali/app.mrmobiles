@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { catalog, type Product } from "@/lib/catalog";
 import FloatingAiChat from "@/app/components/FloatingAiChat";
+import { parseMiniAppWebsiteCart } from "@/lib/website-cart";
 
 type StoreProduct = Product & {
   brand?: string | null;
@@ -86,6 +87,7 @@ export default function Home() {
     const requestedCategory = params.get("category");
     const requestedProduct = params.get("product");
     const buyFromQuery = params.get("buy") === "1";
+    const websiteCart = parseMiniAppWebsiteCart(params.get("website_cart"));
 
     if (requestedCategory === "phone" || requestedCategory === "accessory" || requestedCategory === "service") {
       setCategory(requestedCategory);
@@ -105,6 +107,23 @@ export default function Home() {
           if (buyFromQuery) {
             setCart((current) => ({ ...current, [selected.id]: 1 }));
             setMessage(`${selected.name} added to your cart.`);
+          }
+        }
+
+        if (websiteCart.length) {
+          const imported: CartMap = {};
+          for (const item of websiteCart) {
+            const product = liveProducts.find((candidate) => candidate.id === item.productId);
+            if (!product) continue;
+            const stockLimit = typeof product.stockQty === "number"
+              ? Math.max(0, Math.min(5, product.stockQty))
+              : 5;
+            if (stockLimit < 1) continue;
+            imported[product.id] = Math.min(item.qty, stockLimit);
+          }
+          if (Object.keys(imported).length) {
+            setCart(imported);
+            setMessage("Website cart loaded in Telegram ✅ Review stock and continue checkout.");
           }
         }
       })
