@@ -44,7 +44,12 @@ export async function POST(request: NextRequest) {
     });
 
     if (!validSignature) {
-      await supabase.from("orders").update({ status: "signature_failed" }).eq("id", order.id);
+      await supabase.from("orders").update({
+        status: "signature_failed",
+        workflow_status: "payment_issue",
+        workflow_note: "Payment signature verification failed.",
+        updated_at: new Date().toISOString()
+      }).eq("id", order.id);
       throw new Error("Payment signature verification failed.");
     }
 
@@ -56,12 +61,22 @@ export async function POST(request: NextRequest) {
       Number(payment.amount) !== Number(order.amount_paise) ||
       String(payment.currency || "").toUpperCase() !== String(order.currency || "INR").toUpperCase()
     ) {
-      await supabase.from("orders").update({ status: "payment_mismatch" }).eq("id", order.id);
+      await supabase.from("orders").update({
+        status: "payment_mismatch",
+        workflow_status: "payment_issue",
+        workflow_note: "Payment details did not match the order.",
+        updated_at: new Date().toISOString()
+      }).eq("id", order.id);
       throw new Error("Payment details did not match the order.");
     }
 
     if (!captured) {
-      await supabase.from("orders").update({ status: "payment_authorized" }).eq("id", order.id);
+      await supabase.from("orders").update({
+        status: "payment_authorized",
+        workflow_status: "payment_processing",
+        workflow_note: "Payment authorized; waiting for capture.",
+        updated_at: new Date().toISOString()
+      }).eq("id", order.id);
       throw new Error("Payment is not captured yet. Reopen the Mini App shortly to refresh the status.");
     }
 
@@ -69,8 +84,11 @@ export async function POST(request: NextRequest) {
       .from("orders")
       .update({
         status: "paid",
+        workflow_status: "confirmed",
+        workflow_note: "Payment verified and captured.",
         razorpay_payment_id: paymentId,
-        paid_at: new Date().toISOString()
+        paid_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       })
       .eq("id", order.id)
       .neq("status", "paid")
