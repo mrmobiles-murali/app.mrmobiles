@@ -84,3 +84,22 @@ test("unrelated vague question stays unknown for model fallback", () => {
   assert.equal(answer.handled, false);
   assert.deepEqual(answer.products, []);
 });
+
+
+test("product listing card wording does not trigger payment intent", () => {
+  const answer = answerOfflineBusinessQuestion(
+    "Compare iPhone 13 Pro 128GB and iPhone 12 64GB. Current card shows price and battery.",
+    products,
+    "website"
+  );
+  assert.equal(answer.intent, "compare");
+});
+
+test("explicit credit card payment still routes to payment", () => {
+  const answer = answerOfflineBusinessQuestion(
+    "my credit card payment failed",
+    products,
+    "website"
+  );
+  assert.equal(answer.intent, "payment");
+});
