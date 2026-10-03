@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 
-export const BOT_WORKFLOW_VERSION = "2026-10-03.repair-history-v2";
+export const BOT_WORKFLOW_VERSION = "2026-10-03.admin-repair-controls";
 export const REPAIR_RUSH_SHORT_NAME = "repairrush";
 export const REPAIR_RUSH_BOT_USERNAME = "MrMobileDoctor_bot";
 export const DEFAULT_REPAIR_REPLY = [
@@ -288,6 +288,65 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
     const callbackChatId = callbackQuery.message.chat.id as number;
     const callbackData = typeof callbackQuery.data === "string" ? callbackQuery.data : "";
     const replyMatch = callbackData.match(/^reply_(default|customer):(\d+)$/);
+    const repairActionMatch = callbackData.match(
+      /^repair_admin:(MRR-[A-F0-9]{10}):(diagnosing|repairing|ready|completed)$/i
+    );
+    const quotePromptMatch = callbackData.match(/^repair_quote_prompt:(MRR-[A-F0-9]{10})$/i);
+
+    if (repairActionMatch || quotePromptMatch) {
+      if (!context.admins.includes(adminId)) {
+        await safeAnswerCallback(context, callbackQuery.id, "This action is for the Mr Mobiles support team.");
+        return;
+      }
+    }
+
+    if (repairActionMatch) {
+      const referenceCode = repairActionMatch[1].toUpperCase();
+      const status = repairActionMatch[2].toLowerCase();
+      const notes: Record<string, string> = {
+        diagnosing: "Device inspection started.",
+        repairing: "Repair work started.",
+        ready: "Repair is complete and ready for pickup or delivery.",
+        completed: "Repair delivered and ticket completed."
+      };
+      const ok = context.repairUpdate
+        ? await context.repairUpdate(referenceCode, status, notes[status] || "")
+        : false;
+
+      await safeAnswerCallback(
+        context,
+        callbackQuery.id,
+        ok ? `Repair updated to ${status} ✅` : "Repair update failed."
+      );
+      await context.call("sendMessage", {
+        chat_id: callbackChatId,
+        text: ok
+          ? `✅ ${referenceCode} updated to ${status}. Customer notification sent.`
+          : `⚠️ Could not update ${referenceCode}. Check the ticket and try again.`
+      });
+      return;
+    }
+
+    if (quotePromptMatch) {
+      const referenceCode = quotePromptMatch[1].toUpperCase();
+      await safeAnswerCallback(context, callbackQuery.id, "Quote reference added automatically.");
+      await context.call("sendMessage", {
+        chat_id: callbackChatId,
+        text: [
+          "💰 MR MOBILES quote",
+          `Reference: ${referenceCode}`,
+          "",
+          "Reply with: AMOUNT optional note",
+          "Example: 2500 Display replacement"
+        ].join("\n"),
+        reply_markup: {
+          force_reply: true,
+          selective: true,
+          input_field_placeholder: "Amount + optional note"
+        }
+      });
+      return;
+    }
 
     if (replyMatch) {
       if (!context.admins.includes(adminId)) {
@@ -594,7 +653,44 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
       ? message.reply_to_message.text
       : "";
     const targetMatch = replyPrompt.match(/^↩️ MR MOBILES reply\nCustomer ID: (\d+)\n/);
+    const quoteTargetMatch = replyPrompt.match(/^💰 MR MOBILES quote\nReference: (MRR-[A-F0-9]{10})\n/i);
     const adminReply = typeof message.text === "string" ? message.text.trim() : "";
+
+    if (quoteTargetMatch && context.admins.includes(senderId) && adminReply && !adminReply.startsWith("/")) {
+      const referenceCode = quoteTargetMatch[1].toUpperCase();
+      const quoteMatch = adminReply.match(/^(\d{2,7})(?:\s+([\s\S]+))?$/);
+      const rupees = Number(quoteMatch?.[1]);
+
+      if (!quoteMatch || !Number.isFinite(rupees) || rupees <= 0) {
+        await context.call("sendMessage", {
+          chat_id: message.chat.id,
+          text: [
+            "💰 MR MOBILES quote",
+            `Reference: ${referenceCode}`,
+            "",
+            "Please reply with a valid amount and optional note.",
+            "Example: 2500 Display replacement"
+          ].join("\n"),
+          reply_markup: {
+            force_reply: true,
+            selective: true,
+            input_field_placeholder: "Amount + optional note"
+          }
+        });
+        return;
+      }
+
+      const ok = context.repairQuote
+        ? await context.repairQuote(referenceCode, Math.round(rupees * 100), (quoteMatch[2] || "").trim())
+        : false;
+      await context.call("sendMessage", {
+        chat_id: message.chat.id,
+        text: ok
+          ? `✅ Quote sent for ${referenceCode}: ${formatInr(Math.round(rupees * 100))}`
+          : `⚠️ Quote could not be sent for ${referenceCode}.`
+      });
+      return;
+    }
 
     if (targetMatch && context.admins.includes(senderId) && adminReply && !adminReply.startsWith("/")) {
       const target = Number(targetMatch[1]);

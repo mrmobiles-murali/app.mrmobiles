@@ -327,6 +327,80 @@ test("admin repair quote sends rupee amount to lifecycle handler", async () => {
   assert.match(calls[0].body.text, /2,500/);
 });
 
+test("admin repair status buttons update the bound ticket without typing a command", async () => {
+  let update;
+  const { ctx, calls } = context({
+    repairUpdate: async (referenceCode, status, note) => {
+      update = { referenceCode, status, note };
+      return true;
+    }
+  });
+  await handleBotUpdate(adminCallback("repair_admin:MRR-ABCDEF1234:diagnosing"), ctx);
+  assert.deepEqual(update, {
+    referenceCode: "MRR-ABCDEF1234",
+    status: "diagnosing",
+    note: "Device inspection started."
+  });
+  assert.equal(calls[0].method, "answerCallbackQuery");
+  assert.match(calls[0].body.text, /diagnosing/i);
+  assert.equal(calls[1].body.chat_id, -99);
+  assert.match(calls[1].body.text, /Customer notification sent/);
+});
+
+test("non-admin cannot use repair lifecycle buttons", async () => {
+  let updated = false;
+  const { ctx, calls } = context({
+    repairUpdate: async () => {
+      updated = true;
+      return true;
+    }
+  });
+  await handleBotUpdate(callback("repair_admin:MRR-ABCDEF1234:ready"), ctx);
+  assert.equal(updated, false);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].method, "answerCallbackQuery");
+  assert.match(calls[0].body.text, /support team/i);
+});
+
+test("admin quote button binds repair reference and opens amount-only force reply", async () => {
+  const { ctx, calls } = context();
+  await handleBotUpdate(adminCallback("repair_quote_prompt:MRR-ABCDEF1234"), ctx);
+  const prompt = calls.find(call => call.method === "sendMessage" && call.body.chat_id === -99);
+  assert.ok(prompt);
+  assert.match(prompt.body.text, /Reference: MRR-ABCDEF1234/);
+  assert.match(prompt.body.text, /AMOUNT optional note/);
+  assert.equal(prompt.body.reply_markup.force_reply, true);
+});
+
+test("replying to bound quote prompt sends quote without retyping repair reference", async () => {
+  let quote;
+  const { ctx, calls } = context({
+    repairQuote: async (referenceCode, amountPaise, note) => {
+      quote = { referenceCode, amountPaise, note };
+      return true;
+    }
+  });
+  await handleBotUpdate({
+    update_id: 128,
+    message: {
+      chat: { id: -99, type: "group" },
+      from: { id: 99, first_name: "Admin" },
+      text: "2500 Display replacement",
+      reply_to_message: {
+        text: "💰 MR MOBILES quote\nReference: MRR-ABCDEF1234\n\nReply with: AMOUNT optional note"
+      }
+    }
+  }, ctx);
+  assert.deepEqual(quote, {
+    referenceCode: "MRR-ABCDEF1234",
+    amountPaise: 250000,
+    note: "Display replacement"
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].body.chat_id, -99);
+  assert.match(calls[0].body.text, /₹2,500/);
+});
+
 test("feedback callback saves rating for authenticated Telegram user", async () => {
   let saved;
   const { ctx, calls } = context({
@@ -368,7 +442,7 @@ test("repair command offers guided diagnosis and Mini App services", async () =>
   await handleBotUpdate(message("/repair"), ctx);
   const rows = calls[0].body.reply_markup.inline_keyboard;
   assert.equal(rows[0][0].callback_data, "repair_start");
-  assert.equal(rows[1][0].web_app.url, "https://mrmobiles.in/?v=2026-10-03.repair-history-v2&category=service");
+  assert.equal(rows[1][0].web_app.url, "https://mrmobiles.in/?v=2026-10-03.admin-repair-controls&category=service");
 });
 
 test("group updates never retrieve or publish customer orders", async () => {
