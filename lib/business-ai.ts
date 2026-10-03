@@ -1,5 +1,6 @@
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { listInventoryProducts, searchInventoryProducts, type InventoryProduct } from "@/lib/server-catalog";
+import { answerOfflineBusinessQuestion } from "@/lib/offline-business-intelligence";
 
 type AiResult = {
   text: string;
@@ -260,7 +261,10 @@ export async function answerBusinessQuestion(
       .limit(10)
   ]);
 
-  const suggestedProducts = selectSuggestedProducts(text, products, matchedProducts);
+  const offline = answerOfflineBusinessQuestion(text, products, channel);
+  const suggestedProducts = offline.handled
+    ? offline.products.slice(0, 3) as InventoryProduct[]
+    : selectSuggestedProducts(text, products, matchedProducts);
   const history = (historyResult.data || []).reverse();
   const orders = ordersResult.data || [];
 
@@ -289,10 +293,10 @@ export async function answerBusinessQuestion(
   }));
 
   const credential = process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN;
-  let reply = "";
+  let reply = offline.handled ? offline.text : "";
   let usedModel = false;
 
-  if (credential) {
+  if (!offline.handled && credential) {
     try {
       const response = await fetch("https://ai-gateway.vercel.sh/v1/chat/completions", {
         method: "POST",
@@ -321,6 +325,8 @@ export async function answerBusinessQuestion(
                   ? "On the website, never tell customers to use Telegram slash commands. For private order history or payment status, direct them to Talk to Human so they can continue securely in Telegram."
                   : "In Telegram, slash commands such as /orders may be used when relevant.",
                 "Do not claim an order/payment action happened unless LIVE_CONTEXT shows it.",
+                `LOCAL_INTENT_HINT=${offline.intent}`,
+                "If LOCAL_INTENT_HINT is unknown, reason carefully from the customer request. Do not turn generic help/capability questions into product matches.",
                 `LIVE_CONTEXT=${JSON.stringify({ catalog: catalogContext, recent_orders: orderContext })}`
               ].join("\n")
             },
