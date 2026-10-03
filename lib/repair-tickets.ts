@@ -107,7 +107,8 @@ export async function createTelegramRepairTicket(input: {
   return data as RepairTicket;
 }
 
-export async function listTelegramRepairTickets(userId: number): Promise<RepairTicket[]> {
+export async function listTelegramRepairTickets(userId: number, requestedLimit = 5): Promise<RepairTicket[]> {
+  const limit = Math.max(1, Math.min(20, Math.trunc(requestedLimit) || 5));
   const { data, error } = await getSupabaseAdmin()
     .from("service_requests")
     .select("id,reference_code,device_brand,device_model,issue_or_condition,status,quoted_amount_paise,status_note,created_at,updated_at")
@@ -115,7 +116,7 @@ export async function listTelegramRepairTickets(userId: number): Promise<RepairT
     .eq("source", "telegram")
     .eq("telegram_user_id", userId)
     .order("created_at", { ascending: false })
-    .limit(5);
+    .limit(limit);
 
   if (error) throw new Error("Repair ticket lookup failed.");
   return (data || []) as RepairTicket[];
