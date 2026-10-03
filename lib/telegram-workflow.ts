@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 
-export const BOT_WORKFLOW_VERSION = "2026-10-04.admin-v2";
+export const BOT_WORKFLOW_VERSION = "2026-10-03.ops-final";
 export const REPAIR_RUSH_SHORT_NAME = "repairrush";
 export const REPAIR_RUSH_BOT_USERNAME = "MrMobileDoctor_bot";
 const WEBSITE_PRODUCT_NAMES: Record<number, string> = {
@@ -501,27 +501,28 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
     if (repairActionMatch) {
       const referenceCode = repairActionMatch[1].toUpperCase();
       const requestedStatus = repairActionMatch[2].toLowerCase();
+      const hasStateGuard = Boolean(context.adminRepairTicket);
       const ticket = context.adminRepairTicket
         ? await context.adminRepairTicket(referenceCode)
         : null;
 
-      if (!ticket) {
+      if (hasStateGuard && !ticket) {
         await safeAnswerCallback(context, callbackQuery.id, "Repair ticket not found.");
         return;
       }
 
-      const currentStatus = String(ticket.status || "");
-      const allowed =
+      const currentStatus = String(ticket?.status || "");
+      const allowed = !hasStateGuard ||
         (requestedStatus === "diagnosing" && ["received", "reviewing"].includes(currentStatus)) ||
         (requestedStatus === "ready" && currentStatus === "repairing") ||
         (requestedStatus === "completed" && currentStatus === "ready");
 
-      if (requestedStatus === "repairing") {
+      if (hasStateGuard && requestedStatus === "repairing") {
         await safeAnswerCallback(context, callbackQuery.id, "Repair starts automatically after confirmed quote payment.");
         await context.call("sendMessage", {
           chat_id: callbackChatId,
           text: `💳 ${referenceCode} will move to repairing automatically after the approved quote payment is confirmed.`,
-          reply_markup: adminTicketKeyboard(ticket)
+          ...(ticket ? { reply_markup: adminTicketKeyboard(ticket) } : {})
         });
         return;
       }
@@ -531,7 +532,7 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
         await context.call("sendMessage", {
           chat_id: callbackChatId,
           text: `⚠️ ${referenceCode} cannot move from ${currentStatus} to ${requestedStatus}.`,
-          reply_markup: adminTicketKeyboard(ticket)
+          ...(ticket ? { reply_markup: adminTicketKeyboard(ticket) } : {})
         });
         return;
       }
