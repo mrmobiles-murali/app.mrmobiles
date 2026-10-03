@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { catalog, type Product } from "@/lib/catalog";
+import FloatingAiChat from "@/app/components/FloatingAiChat";
 
 type StoreProduct = Product & {
   brand?: string | null;
@@ -523,6 +524,8 @@ export default function Home() {
           ? "Payments processed securely by Razorpay. Order verification happens on the Mr Mobiles server."
           : "Online payment is temporarily unavailable. Orders can still be placed securely through Telegram."}
       </footer>
+
+      <FloatingAiChat />
     </main>
   );
 }
