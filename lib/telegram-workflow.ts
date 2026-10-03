@@ -540,7 +540,7 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
   const isAdmin = context.admins.includes(userId);
   const send = (body: Record<string, unknown>) => context.call("sendMessage", { chat_id: chatId, ...body });
   const keyboard = (label = "Open Mr Mobiles", category?: string) => {
-    const url = new URL(context.appUrl);
+    const url = new URL(versionedMiniAppUrl(context.appUrl));
     if (category) url.searchParams.set("category", category);
     return { inline_keyboard: [[{ text: label, web_app: { url: url.toString() } }]] };
   };
@@ -596,7 +596,7 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
   } else if (command === "/shop") {
     await send({ text: "📱 Browse Mr Mobiles phones and accessories:", reply_markup: keyboard("Browse Shop") });
   } else if (command === "/repair") {
-    const serviceUrl = new URL(context.appUrl);
+    const serviceUrl = new URL(versionedMiniAppUrl(context.appUrl));
     serviceUrl.searchParams.set("category", "service");
     await send({
       text: "🛠️ Repair Help\n\nStart a guided diagnosis here, or browse repair services in the Mini App. Final repair work and pricing are confirmed after inspection.",
