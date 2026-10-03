@@ -15,12 +15,16 @@ Clean-slate rebuild for **https://mrmobiles.in**.
 - Vercel-ready Next.js app
 - Repair Rush HTML5 game and launch integration ([setup](docs/REPAIR_RUSH.md))
 
-## Custom domain target (verify routing before switching)
+## Customer-facing domain architecture
 
-Mini App: `https://mrmobiles.in`
+Mini App: `https://app.mrmobiles.in`
+
+Secure Razorpay bridge: `https://mrmobiles.in/pay`
 
 Razorpay webhook:
 `https://mrmobiles.in/api/razorpay/webhook`
+
+Cloudflare keeps customer-facing traffic on Mr Mobiles domains while Vercel remains the application origin behind the scenes.
 
 ## Environment variables
 
@@ -41,12 +45,12 @@ Run `database/schema.sql` in a new Supabase project.
 
 1. Deploy this repository to Vercel.
 2. Add the environment variables.
-3. Attach `mrmobiles.in`.
-4. Add the Vercel DNS record at the DNS provider if requested.
-5. Configure the Telegram Mini App/menu button with `https://mrmobiles.in`.
-6. Configure the Razorpay webhook.
-7. Test in Razorpay Test Mode.
-8. Switch to Live keys only after successful end-to-end testing.
+3. Route `app.mrmobiles.in` to the Mini App through Cloudflare.
+4. Route `mrmobiles.in/pay*` to the dedicated payment bridge Worker.
+5. Set `TELEGRAM_MINI_APP_URL=https://app.mrmobiles.in`.
+6. Keep Razorpay checkout on the approved `mrmobiles.in` origin through the payment bridge.
+7. Configure the Razorpay webhook.
+8. Run a ₹1 end-to-end payment test before higher-value transactions.
 
 The catalog currently contains demo items in `lib/catalog.ts`; replace those with the real Mr Mobiles inventory before launch.
 
@@ -58,13 +62,14 @@ Production checkout is enabled whenever `RAZORPAY_KEY_ID` and `RAZORPAY_KEY_SECR
 `RAZORPAY_PAYMENTS_ENABLED=false`
 
 Payment confirmation is protected by:
-1. Telegram initData validation.
-2. Trusted server-side catalog pricing.
-3. Razorpay checkout signature verification.
-4. Server-side Razorpay Payment API verification for order id, amount, currency and captured status.
-5. Supabase idempotent paid-state updates.
-6. Automatic reconciliation of recent unpaid Razorpay orders whenever the Mini App is reopened.
-7. Telegram confirmation after the order transitions to paid.
+1. Telegram initData validation before an order can be created.
+2. Trusted server-side catalog or custom amount validation.
+3. A short-lived HMAC-signed bridge token bound to one internal order, one Razorpay order and one Telegram user.
+4. Razorpay checkout signature verification.
+5. Server-side Razorpay Payment API verification for order id, amount, currency and captured status.
+6. Supabase idempotent paid-state updates.
+7. Automatic reconciliation of recent unpaid Razorpay orders whenever the Mini App is reopened.
+8. Telegram confirmation after the order transitions to paid.
 
 A Razorpay webhook remains recommended for asynchronous event delivery and can use:
 `https://mrmobiles.in/api/razorpay/webhook`
