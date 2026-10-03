@@ -430,8 +430,20 @@ export default function Home() {
     });
 
     rzp.on("payment.failed", (response: any) => {
-      setMessage(response?.error?.description || "Payment failed. Please try again.");
+      const reason = response?.error?.description || "Payment failed. Please try again.";
+      setMessage(reason);
       tg.HapticFeedback?.notificationOccurred("error");
+      fetch("/api/razorpay/failure", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-telegram-init-data": tg.initData
+        },
+        body: JSON.stringify({
+          internalOrderId: order.internalOrderId,
+          reason
+        })
+      }).catch(() => undefined);
     });
 
     rzp.open();

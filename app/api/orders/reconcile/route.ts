@@ -41,8 +41,11 @@ export async function POST(request: NextRequest) {
         .from("orders")
         .update({
           status: "paid",
+          workflow_status: "confirmed",
+          workflow_note: "Payment reconciled from Razorpay capture.",
           razorpay_payment_id: captured.id,
-          paid_at: new Date().toISOString()
+          paid_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
         })
         .eq("id", order.id)
         .neq("status", "paid")

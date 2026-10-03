@@ -16,6 +16,20 @@ export async function POST(request: NextRequest) {
     const priced = await priceInventoryCart(cart);
     const supabase = getSupabaseAdmin();
 
+    // Recover payment attempts interrupted before Razorpay returned an order id.
+    const staleCutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    await supabase
+      .from("orders")
+      .update({
+        status: "payment_create_failed",
+        workflow_status: "payment_issue",
+        workflow_note: "Previous payment setup was interrupted. Retry checkout.",
+        updated_at: new Date().toISOString()
+      })
+      .eq("telegram_user_id", user.id)
+      .eq("status", "creating_payment")
+      .lt("updated_at", staleCutoff);
+
     const { data: orderRow, error: insertError } = await supabase
       .from("orders")
       .insert({
@@ -24,6 +38,8 @@ export async function POST(request: NextRequest) {
         amount_paise: priced.amountPaise,
         currency: "INR",
         status: "creating_payment",
+        workflow_status: "payment_processing",
+        workflow_note: "Creating secure Razorpay checkout.",
         cart: priced.items
       })
       .select("id")
@@ -44,7 +60,12 @@ export async function POST(request: NextRequest) {
     } catch (paymentError) {
       await supabase
         .from("orders")
-        .update({ status: "payment_create_failed" })
+        .update({
+          status: "payment_create_failed",
+          workflow_status: "payment_issue",
+          workflow_note: "Razorpay checkout could not be created. Retry checkout.",
+          updated_at: new Date().toISOString()
+        })
         .eq("id", orderRow.id);
       throw paymentError;
     }
@@ -55,7 +76,10 @@ export async function POST(request: NextRequest) {
       .from("orders")
       .update({
         status: "created",
-        razorpay_order_id: order.id
+        workflow_status: "awaiting_payment",
+        workflow_note: "Secure checkout created. Awaiting customer payment.",
+        razorpay_order_id: order.id,
+        updated_at: new Date().toISOString()
       })
       .eq("id", orderRow.id);
 

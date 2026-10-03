@@ -27,7 +27,8 @@ export async function createRazorpayOrder(input: {
       receipt: input.receipt,
       notes: input.notes ?? {}
     }),
-    cache: "no-store"
+    cache: "no-store",
+    signal: AbortSignal.timeout(12000)
   });
 
   const data = await response.json();
@@ -82,7 +83,8 @@ function razorpayAuthHeader() {
 export async function fetchRazorpayPayment(paymentId: string) {
   const response = await fetch(`https://api.razorpay.com/v1/payments/${encodeURIComponent(paymentId)}`, {
     headers: { Authorization: razorpayAuthHeader() },
-    cache: "no-store"
+    cache: "no-store",
+    signal: AbortSignal.timeout(12000)
   });
   const data = await response.json();
   if (!response.ok) {
@@ -101,7 +103,8 @@ export async function fetchRazorpayPayment(paymentId: string) {
 export async function fetchRazorpayOrderPayments(orderId: string) {
   const response = await fetch(`https://api.razorpay.com/v1/orders/${encodeURIComponent(orderId)}/payments`, {
     headers: { Authorization: razorpayAuthHeader() },
-    cache: "no-store"
+    cache: "no-store",
+    signal: AbortSignal.timeout(12000)
   });
   const data = await response.json();
   if (!response.ok) {
