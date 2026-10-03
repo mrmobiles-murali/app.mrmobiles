@@ -25,7 +25,11 @@ button { font: inherit; }
 .shell {
   width: min(100%, 760px);
   margin: 0 auto;
-  padding: 18px 16px 34px;
+  padding:
+    calc(18px + var(--tg-content-safe-area-inset-top, env(safe-area-inset-top, 0px)))
+    calc(16px + var(--tg-content-safe-area-inset-right, env(safe-area-inset-right, 0px)))
+    calc(34px + var(--tg-content-safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)))
+    calc(16px + var(--tg-content-safe-area-inset-left, env(safe-area-inset-left, 0px)));
 }
 
 .hero {
@@ -189,7 +193,7 @@ button { font: inherit; }
 
 .checkoutBar {
   position: sticky;
-  bottom: 10px;
+  bottom: calc(10px + var(--tg-content-safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
   margin-top: 18px;
   padding: 10px;
   display: flex;
