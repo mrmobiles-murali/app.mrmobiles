@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
+import { encodeMiniAppWebsiteCart, parseWebsiteCartStartPayload, websiteProductSearchName } from "@/lib/website-cart";
 
-export const BOT_WORKFLOW_VERSION = "2026-10-03.ops-final";
+export const BOT_WORKFLOW_VERSION = "2026-10-04.web-checkout";
 export const REPAIR_RUSH_SHORT_NAME = "repairrush";
 export const REPAIR_RUSH_BOT_USERNAME = "MrMobileDoctor_bot";
 export const DEFAULT_REPAIR_REPLY = [
@@ -1061,6 +1062,100 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
   }
 
   if (command === "/start" || command === "/menu") {
+    if (command === "/start") {
+      const websiteCart = parseWebsiteCartStartPayload(argument);
+      if (websiteCart.length) {
+        const resolved: Array<{ product: InlineProduct; qty: number }> = [];
+        for (const item of websiteCart) {
+          const searchName = websiteProductSearchName(item.websiteId);
+          if (!searchName) continue;
+          const matches = await context.searchProducts(searchName);
+          const exact = matches.find((product) => product.name.toLowerCase() === searchName.toLowerCase()) || matches[0];
+          if (exact) resolved.push({ product: exact, qty: item.qty });
+        }
+
+        if (resolved.length) {
+          const cartUrl = new URL(versionedMiniAppUrl(context.appUrl));
+          cartUrl.searchParams.set(
+            "website_cart",
+            encodeMiniAppWebsiteCart(resolved.map((item) => ({ productId: item.product.id, qty: item.qty })))
+          );
+          const totalPaise = resolved.reduce((sum, item) => sum + item.product.pricePaise * item.qty, 0);
+          const lines = resolved.map((item, index) =>
+            `${index + 1}. ${item.product.name} ×${item.qty} — ${formatInr(item.product.pricePaise * item.qty)}`
+          );
+          const unavailable = websiteCart.length - resolved.length;
+
+          await send({
+            text: [
+              "🛒 Website cart received",
+              "",
+              ...lines,
+              "",
+              `Total: ${formatInr(totalPaise)}`,
+              unavailable > 0 ? `⚠️ ${unavailable} item(s) need live availability confirmation.` : "",
+              "",
+              "Continue inside the Mr Mobiles Mini App to confirm stock and place/pay for the order."
+            ].filter(Boolean).join("\n"),
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: "🛍 Continue Checkout", web_app: { url: cartUrl.toString() } }],
+                [{ text: "📦 Check Orders", callback_data: "orders_latest" }],
+                [{ text: "👤 Talk to Human", callback_data: "human_support" }]
+              ]
+            }
+          });
+          return;
+        }
+
+        await send({
+          text: "🛒 I received your website cart, but those items are not currently available in the live Telegram catalog. Tap Shop or Talk to Human to continue.",
+          reply_markup: homeKeyboard(context, isAdmin)
+        });
+        return;
+      }
+
+      const repairStart = argument.match(/^repair_(hardware|software|unlock)$/);
+      if (repairStart) {
+        const label: Record<string, string> = {
+          hardware: "Hardware Repair",
+          software: "Software Repair",
+          unlock: "FRP / Unlock Service"
+        };
+        await send({
+          text: `🛠️ ${label[repairStart[1]]}\n\nWebsite-la irundhu vandhirukeenga. Tap Start Diagnosis and send brand + exact model + problem. Final diagnosis and price technician inspection-ku apram confirm pannuvom.`,
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "🧰 Start Diagnosis", callback_data: "repair_start" }],
+              [{ text: "👤 Talk to Human", callback_data: "human_support" }]
+            ]
+          }
+        });
+        return;
+      }
+
+      if (argument === "sell") {
+        await send({
+          text: "♻️ Sell / Trade-in\n\nSend brand, exact model, storage, age and condition. Mr Mobiles can guide the estimate and final inspection.",
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "🤖 Ask Trade-in AI", callback_data: "ai_help" }],
+              [{ text: "👤 Talk to Human", callback_data: "human_support" }]
+            ]
+          }
+        });
+        return;
+      }
+
+      if (argument === "support") {
+        await send({
+          text: "👤 Mr Mobiles Support\n\nYou came from the website. Tap below and the team can continue with you here in Telegram.",
+          reply_markup: { inline_keyboard: [[{ text: "Connect to Team", callback_data: "human_support" }]] }
+        });
+        return;
+      }
+    }
+
     let referralRecorded = false;
     const referralMatch = command === "/start" ? argument.match(/^ref_(\d+)$/) : null;
     const referrerUserId = Number(referralMatch?.[1]);
