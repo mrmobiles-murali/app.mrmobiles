@@ -53,7 +53,7 @@ const REPAIR_WORDS = [
 ];
 
 const ORDER_WORDS = ["order","track","tracking","delivery","delivered","dispatch","shipment","receipt"];
-const PAYMENT_WORDS = ["payment","paid","pay","refund","failed","razorpay","upi","card"];
+const PAYMENT_WORDS = ["payment","paid","pay","refund","failed","razorpay","upi"];
 const WARRANTY_WORDS = ["warranty","guarantee","coverage","covered"];
 const HUMAN_WORDS = ["human","person","staff","team","agent","technician","call me","contact","support"];
 const CAPABILITY_PATTERNS = [
@@ -176,7 +176,8 @@ export function classifyOfflineIntent(message: string): { intent: OfflineIntent;
     return { intent: "greeting", confidence: 0.98 };
   }
   if (hasAny(text, HUMAN_WORDS)) return { intent: "human", confidence: 0.96 };
-  if (hasAny(text, PAYMENT_WORDS)) return { intent: "payment", confidence: 0.96 };
+  const explicitPaymentCard = /\\b(?:credit|debit|atm)\\s+card\\b|\\bcard\\s+(?:payment|declined|failed|charged)\\b/i.test(message);
+  if (hasAny(text, PAYMENT_WORDS) || explicitPaymentCard) return { intent: "payment", confidence: 0.96 };
   if (hasAny(text, ORDER_WORDS)) return { intent: "order", confidence: 0.95 };
   if (hasAny(text, WARRANTY_WORDS)) return { intent: "warranty", confidence: 0.94 };
 
