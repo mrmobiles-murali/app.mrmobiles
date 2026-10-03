@@ -40,16 +40,26 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const [{ data: orders, error: orderError }, tickets] = await Promise.all([
+    const [
+      { data: orders, error: orderError },
+      tickets,
+      { data: warranties, error: warrantyError }
+    ] = await Promise.all([
       supabase.from("orders")
         .select("id,amount_paise,status,workflow_status,tracking_code,created_at,paid_at")
         .eq("telegram_user_id", user.id)
         .order("created_at", { ascending: false })
         .limit(500),
-      listTelegramRepairTickets(user.id, 20)
+      listTelegramRepairTickets(user.id, 20),
+      supabase.from("customer_warranties")
+        .select("warranty_code,repair_reference,device_label,start_at,end_at,status,note")
+        .eq("telegram_user_id", user.id)
+        .eq("status", "active")
+        .order("end_at", { ascending: false })
+        .limit(20)
     ]);
 
-    if (orderError) throw new Error("Account order lookup failed.");
+    if (orderError || warrantyError) throw new Error("Account lookup failed.");
 
     const paidOrders = (orders || []).filter(order => order.status === "paid");
     const paidSpendPaise = paidOrders.reduce(
@@ -84,13 +94,19 @@ export async function POST(request: NextRequest) {
         loyaltyPoints: Math.floor(paidSpendPaise / 10000),
         repairCount: tickets.length,
         activeRepairs: tickets.filter(ticket => activeStatuses.has(ticket.status)).length,
-        savedDevices: savedDevices.length
+        savedDevices: savedDevices.length,
+        activeWarranties: (warranties || []).filter(warranty =>
+          new Date(warranty.end_at).getTime() >= Date.now()
+        ).length
       },
       orders: (orders || []).slice(0, 10).map(order => ({
         ...order,
         receipt_code: receiptCode(order.id, order.created_at)
       })),
       repairs: tickets,
+      warranties: (warranties || []).filter(warranty =>
+        new Date(warranty.end_at).getTime() >= Date.now()
+      ),
       savedDevices
     }, {
       headers: { "Cache-Control": "no-store" }
