@@ -12,6 +12,13 @@ function cleanReason(value: unknown) {
   return String(value || "Payment failed.").replace(/[\r\n\t]+/g, " ").trim().slice(0, 500);
 }
 
+function formatInr(paise: number) {
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR"
+  }).format(Number(paise || 0) / 100);
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -152,9 +159,33 @@ export async function POST(request: NextRequest) {
     if (updateError) throw new Error(updateError.message);
 
     if (updated) {
+      const appUrl = process.env.TELEGRAM_MINI_APP_URL || "https://app.mrmobiles.in";
       await sendTelegramMessage(
         Number(order.telegram_user_id),
-        `✅ <b>Payment received</b>\nOrder: <code>${order.id}</code>\nPayment: <code>${paymentId}</code>\n\nSecurely processed via mrmobiles.in. Thank you for choosing Mr Mobiles.`
+        [
+          "✅ <b>Payment successful</b>",
+          "",
+          `Amount: <b>${formatInr(Number(order.amount_paise))}</b>`,
+          `Order: <code>${order.id}</code>`,
+          `Payment: <code>${paymentId}</code>`,
+          "Status: <b>Paid & confirmed</b>",
+          "",
+          "Securely processed via mrmobiles.in.",
+          "Thank you for choosing Mr Mobiles 💙"
+        ].join("\n"),
+        {
+          replyMarkup: {
+            inline_keyboard: [
+              [
+                { text: "👤 My Account", callback_data: "account_summary" },
+                { text: "🧾 Orders", callback_data: "orders_latest" }
+              ],
+              [
+                { text: "🛍 Shop Again", web_app: { url: appUrl } }
+              ]
+            ]
+          }
+        }
       );
     }
 
