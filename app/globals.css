@@ -154,6 +154,40 @@ button { font: inherit; }
   text-transform: uppercase;
 }
 
+.accountStats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 10px 0 6px;
+}
+
+.accountStats > div {
+  min-width: 0;
+  padding: 10px 8px;
+  display: grid;
+  gap: 3px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  border-radius: 12px;
+}
+
+.accountStats strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: .88rem;
+}
+
+.accountStats span,
+.accountNote {
+  color: var(--muted);
+  font-size: .72rem;
+}
+
+.accountNote {
+  margin: 8px 0 4px;
+  line-height: 1.45;
+}
+
 .repairItem {
   padding: 10px 0;
   display: grid;
