@@ -3,7 +3,7 @@ import { answerBusinessQuestion, aiRuntimeConfigured } from "@/lib/business-ai";
 import { getInventoryProductsByIds, searchInventoryProducts } from "@/lib/server-catalog";
 import { approveRepairQuote, createTelegramRepairTicket, getTelegramRepairTicket, listTelegramRepairTickets, REPAIR_STATUSES, updateRepairTicket } from "@/lib/repair-tickets";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
-import { adminIds, BOT_COMMANDS, BOT_WORKFLOW_VERSION, derivedWebhookSecret, handleBotUpdate, matchesSecret, miniAppUrl } from "@/lib/telegram-workflow";
+import { adminIds, BOT_COMMANDS, BOT_WORKFLOW_VERSION, derivedWebhookSecret, handleBotUpdate, matchesSecret, miniAppUrl, repairRushGameUrl, isRepairRushUpdate, REPAIR_RUSH_SHORT_NAME, REPAIR_RUSH_BOT_USERNAME } from "@/lib/telegram-workflow";
 
 const MINI_APP_URL = "https://mrmobiles.in";
 export const runtime = "nodejs";
@@ -13,8 +13,12 @@ function settings(request: NextRequest) {
   const admins = adminIds(process.env.TELEGRAM_ADMIN_IDS);
   const candidate = process.env.TELEGRAM_SUPPORT_CHAT_ID;
   const supportChatId = candidate && /^-?\d+$/.test(candidate) ? Number(candidate) : admins[0];
+  let gameUrl: string | undefined;
+  try { gameUrl = repairRushGameUrl(process.env.REPAIR_RUSH_GAME_URL); }
+  catch { /* An invalid optional game URL must not interrupt customer support. */ }
   return {
     appUrl: miniAppUrl(request.url, process.env.TELEGRAM_MINI_APP_URL),
+    gameUrl,
     admins,
     supportChatId: Number.isSafeInteger(supportChatId) && supportChatId !== 0 ? supportChatId : undefined
   };
@@ -36,6 +40,10 @@ function status(request: NextRequest) {
     supportConfigured: Boolean(config.supportChatId && config.admins.length),
     inlineHandlerConfigured: true,
     callbackHandlerConfigured: true,
+    gameConfigured: Boolean(config.gameUrl),
+    gameShortName: REPAIR_RUSH_SHORT_NAME,
+    gameBotUsername: REPAIR_RUSH_BOT_USERNAME,
+    gameConfigurationInvalid: Boolean(process.env.REPAIR_RUSH_GAME_URL && !config.gameUrl),
     aiConfigured: aiRuntimeConfigured(),
     aiGateway: "vercel",
     aiModel: process.env.MR_MOBILES_AI_MODEL || "openai/gpt-5.6-luna",
@@ -124,12 +132,17 @@ export async function POST(request: NextRequest) {
     };
 
     let botUsername: string | undefined;
-    if ((update as any)?.inline_query) {
+    if ((update as any)?.inline_query || isRepairRushUpdate(update)) {
       const me = await callTelegram("getMe", {}) as any;
       if (typeof me?.username === "string") botUsername = me.username;
     }
 
     const config = settings(request);
+    // BotFather registered this game to @MrMobileDoctor_bot. Do not try to
+    // launch it with another bot's token, even if an optional URL was set.
+    if (isRepairRushUpdate(update) && botUsername?.toLowerCase() !== REPAIR_RUSH_BOT_USERNAME.toLowerCase()) {
+      config.gameUrl = undefined;
+    }
 
     if (incomingCommand === "/start") {
       try {

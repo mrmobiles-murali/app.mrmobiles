@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#0b1418">
+  <meta name="description" content="Repair virtual phones in a 60-second arcade challenge. Match the fault, choose the part, and build your combo in Mr Mobiles: Repair Rush.">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; font-src 'none'; media-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230b1418'/%3E%3Cpath d='M19 3 8 18h8l-3 11 11-16h-8z' fill='%23b6f56a'/%3E%3C/svg%3E">
+  <title>Mr Mobiles: Repair Rush</title>
+  <style>
+    :root{color-scheme:dark;--bg:#0b1418;--panel:#132126;--edge:#293b40;--text:#eff7f1;--muted:#a8b9bd;--lime:#b6f56a;--orange:#ff9864;--red:#ff7779}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:16px;min-height:100svh;background-image:radial-gradient(ellipse at 50% 0%,#233c32 0,transparent 60%)}
+    button{font:inherit;touch-action:manipulation;cursor:pointer}button:focus-visible{outline:3px solid var(--orange);outline-offset:4px}button:disabled{cursor:default}button,a{-webkit-tap-highlight-color:transparent}[hidden]{display:none!important}
+    .app{width:min(100% - 40px,820px);margin:auto;padding:32px 0 max(22px,env(safe-area-inset-bottom))}.mast{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:25px}.brand{font-size:.875rem;font-weight:750;letter-spacing:.17em;color:var(--lime)}.edition{font-size:.75rem;color:var(--muted);letter-spacing:.14em}h1{font-size:clamp(2.1rem,6vw,3.2rem);line-height:1;margin:8px 0 0;font-weight:900;letter-spacing:-.055em}h1 span{color:var(--lime)}.bolt{font-size:3.6rem;color:var(--lime);font-weight:900;line-height:1;transform:skew(-10deg)}
+    .hud{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;align-items:center;margin-bottom:17px}.stat .label{font-size:.75rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:5px}.stat strong{font-size:1.6rem;font-variant-numeric:tabular-nums;font-weight:850;line-height:1}.stat .unit{font-size:.875rem;color:var(--muted);font-weight:500}.hearts{letter-spacing:.13em;color:var(--orange);font-size:1.3rem!important}.small-btn{min-height:44px;min-width:44px;border:1px solid var(--edge);background:transparent;color:var(--muted);border-radius:10px;padding:9px 12px;font-weight:650;font-size:.875rem}.small-btn:hover{background:var(--panel);color:var(--text)}.small-btn:disabled{opacity:.35}
+    .round-track{height:5px;background:var(--edge);border-radius:5px;margin-bottom:18px;overflow:hidden}.round-track i{display:block;width:100%;height:100%;background:var(--lime)}
+    .bench{border:1px solid var(--edge);background:var(--panel);border-radius:22px;overflow:hidden;position:relative;min-height:292px}.bench-top{display:flex;align-items:center;justify-content:space-between;padding:15px 20px;border-bottom:1px solid var(--edge);font-size:.75rem;text-transform:uppercase;letter-spacing:.1em;color:var(--muted)}.bench-top strong{color:var(--lime);font-weight:650}.bench-top span:last-child{font-variant-numeric:tabular-nums}.ticket{display:grid;grid-template-columns:1fr auto;gap:20px;align-items:center;padding:26px 26px 19px;min-height:172px}.ticket p{margin:0 0 11px;color:var(--muted);font-size:.875rem}.ticket h2{margin:0;font-size:clamp(1.6rem,5vw,2.5rem);letter-spacing:-.04em;line-height:1.12}.ticket .instruction{font-size:.875rem;color:var(--lime);margin:12px 0 0}.device-icon{font-size:4.5rem;filter:drop-shadow(0 10px 12px #0003);line-height:1.1}.ticket-bottom{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:0 26px 20px}.ticket-track{background:#0b1418;height:8px;flex:1;overflow:hidden;border-radius:6px}.ticket-track i{display:block;width:100%;height:100%;background:var(--orange)}.ticket-seconds{font-size:.875rem;font-variant-numeric:tabular-nums;color:var(--orange);min-width:31px}.feedback{font-size:.875rem;min-height:21px;line-height:1.35;color:var(--muted);margin:13px 0 14px;display:flex;justify-content:space-between;gap:10px}.feedback strong{color:var(--lime);white-space:nowrap}.feedback.error{color:var(--red)}
+    .tray{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.part{display:flex;align-items:center;gap:12px;min-height:83px;border:1px solid var(--edge);background:#0e1b20;border-radius:14px;color:var(--text);padding:13px 17px;text-align:left;transition:transform .12s,background .12s,border-color .12s}.part:hover:not(:disabled){background:#20372a;border-color:var(--lime);transform:translateY(-2px)}.part:active:not(:disabled){transform:scale(.96)}.part:disabled{opacity:.46}.part .icon{font-size:1.9rem;line-height:1}.part .name{font-size:.95rem;font-weight:700}.part kbd{display:block;font-family:inherit;font-size:.75rem;color:var(--muted);margin-top:5px;font-weight:400}.part.correct{border-color:var(--lime);background:#29412b;opacity:1}.part.wrong{border-color:var(--red);background:#44232a;opacity:1}.foot{font-size:.75rem;text-align:center;color:var(--muted);margin:19px 0 0;line-height:1.6}.foot strong{font-weight:600;color:#c2d1d0}
+    .overlay{position:absolute;inset:0;z-index:2;display:flex;align-items:center;justify-content:center;text-align:center;background:linear-gradient(150deg,#192d27,#132126 65%);padding:20px}.overlay-content{max-width:520px;width:100%}.eyebrow{font-size:.75rem;text-transform:uppercase;letter-spacing:.13em;color:var(--lime);font-weight:700;margin:0 0 8px}.overlay h2{font-size:clamp(1.7rem,5vw,2.45rem);letter-spacing:-.04em;margin:0 0 9px;line-height:1.1}.overlay p{font-size:.95rem;line-height:1.5;color:var(--muted);max-width:430px;margin:0 auto 16px}.primary{color:var(--bg);background:var(--lime);border:0;border-radius:11px;padding:13px 25px;min-height:48px;font-weight:850;font-size:1rem;box-shadow:0 4px 0 #76a541}.primary:hover{background:#c6ff88}.primary:active{transform:translateY(2px);box-shadow:0 2px 0 #76a541}.rules{display:flex;justify-content:center;gap:15px;color:#cbd9d4;font-size:.875rem;margin-bottom:20px}.result-score{font-size:2.9rem!important;color:var(--lime)!important;font-weight:900;font-variant-numeric:tabular-nums;line-height:1!important;margin:10px auto!important}.result-stats{display:flex;justify-content:center;flex-wrap:wrap;gap:18px;font-size:.875rem;margin:12px 0 18px;color:var(--muted)}.result-stats b{color:var(--text)}
+    .flash{animation:flash .25s ease-out}.shake{animation:shake .22s ease-in-out}@keyframes flash{0%{box-shadow:0 0 0 2px var(--lime)}100%{box-shadow:0 0 0 0 transparent}}@keyframes shake{25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}
+    @media(max-width:520px){.app{width:calc(100% - 28px);padding-top:max(18px,env(safe-area-inset-top))}.mast{margin-bottom:19px}.bolt{font-size:2.8rem}.edition{display:none}.hud{gap:8px}.stat strong{font-size:1.35rem}.stat .label{font-size:.75rem}.hearts{font-size:1.1rem!important;letter-spacing:.07em}.small-btn{padding:9px 8px}.bench{min-height:268px;border-radius:18px}.bench-top{padding:13px 16px}.ticket{padding:24px 18px 17px;gap:8px;min-height:162px}.device-icon{font-size:3.6rem}.ticket-bottom{padding:0 18px 19px}.tray{gap:8px}.part{flex-direction:column;justify-content:center;gap:8px;min-height:86px;padding:12px 7px;text-align:center;border-radius:12px}.part .icon{font-size:1.65rem}.part .name{font-size:.875rem}.part kbd{display:none}.feedback{font-size:.875rem;margin:12px 0}.overlay{padding:18px}.overlay p{font-size:.875rem}.overlay h2{font-size:1.8rem}.rules{gap:12px;font-size:.875rem}.foot{margin:15px 0 0}.round-track{margin-bottom:14px}.result-score{font-size:2.5rem!important}}
+    @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important}}
+  </style>
+</head>
+<body>
+<main class="app">
+  <header class="mast"><div><div class="brand">MR MOBILES <span class="edition"> / ARCADE 01</span></div><h1>REPAIR <span>RUSH.</span></h1></div><div class="bolt" aria-hidden="true">ϟ</div></header>
+  <section class="hud" aria-label="Round status">
+    <div class="stat"><span class="label">Score</span><strong id="score">0</strong></div>
+    <div class="stat"><span class="label">Time left</span><strong id="time">60<span class="unit">s</span></strong></div>
+    <div class="stat"><span class="label">Chances</span><strong class="hearts" id="lives" aria-label="3 chances left">● ● ●</strong></div>
+    <button class="small-btn" id="pause" disabled aria-label="Pause game">Pause</button>
+  </section>
+  <div class="round-track" aria-hidden="true"><i id="round-bar"></i></div>
+  <section class="bench" id="bench" aria-label="Repair workbench">
+    <div class="bench-top"><strong id="ticket-number">Repair ticket 001</strong><span id="model">Pocket One</span></div>
+    <div class="ticket"><div><p>FAULT REPORTED</p><h2 id="fault">Cracked screen</h2><p class="instruction">Tap the matching spare part.</p></div><div class="device-icon" aria-hidden="true">📱</div></div>
+    <div class="ticket-bottom"><div class="ticket-track" aria-hidden="true"><i id="ticket-bar"></i></div><span class="ticket-seconds" id="ticket-time">7.0s</span></div>
+    <div class="overlay" id="overlay">
+      <div class="overlay-content" id="intro"><p class="eyebrow">Your repair bench is ready</p><h2>Fast hands. Fixed phones.</h2><p>Read the fault and tap the matching part. Chain correct repairs to multiply your score.</p><div class="rules"><span>60 seconds</span><span>3 chances</span><span>6 parts</span></div><button class="primary" id="start">Start repairing</button></div>
+      <div class="overlay-content" id="paused" hidden><p class="eyebrow">Bench on hold</p><h2>Take a breather.</h2><p>Your clock is paused. Continue when you're ready.</p><button class="primary" id="resume">Continue round</button></div>
+      <div class="overlay-content" id="results" hidden><p class="eyebrow" id="end-reason">Shift complete</p><h2 id="rating">Repair rookie</h2><p class="result-score" id="final-score">0</p><div class="result-stats"><span><b id="repaired">0</b> repaired</span><span><b id="accuracy">0%</b> accuracy</span><span>Session best <b id="best">0</b></span></div><button class="primary" id="restart">Play again</button></div>
+    </div>
+  </section>
+  <div class="feedback"><span id="feedback" role="status" aria-live="polite">Match the fault. Keep the streak.</span><strong id="combo">COMBO ×1</strong></div>
+  <section class="tray" aria-label="Choose a spare part">
+    <button class="part" data-part="screen" disabled><span class="icon" aria-hidden="true">📱</span><span class="name">Screen<kbd>Key 1</kbd></span></button>
+    <button class="part" data-part="battery" disabled><span class="icon" aria-hidden="true">🔋</span><span class="name">Battery<kbd>Key 2</kbd></span></button>
+    <button class="part" data-part="charger" disabled><span class="icon" aria-hidden="true">🔌</span><span class="name">Charge port<kbd>Key 3</kbd></span></button>
+    <button class="part" data-part="speaker" disabled><span class="icon" aria-hidden="true">🔊</span><span class="name">Speaker<kbd>Key 4</kbd></span></button>
+    <button class="part" data-part="camera" disabled><span class="icon" aria-hidden="true">📷</span><span class="name">Camera<kbd>Key 5</kbd></span></button>
+    <button class="part" data-part="board" disabled><span class="icon" aria-hidden="true">⚙️</span><span class="name">Mainboard<kbd>Key 6</kbd></span></button>
+  </section>
+  <p class="foot"><strong>Just for fun.</strong> Virtual repairs, no real repair advice.<br>Scores last for this visit only.</p>
+</main>
+<script>
+'use strict';
+// No cookies, persistent storage, external requests, tracking or Telegram identity access.
+const PARTS = [
+  {id:'screen',name:'Screen',fault:'Cracked screen'},
+  {id:'battery',name:'Battery',fault:'Battery drains fast'},
+  {id:'charger',name:'Charge port',fault:'Won’t charge'},
+  {id:'speaker',name:'Speaker',fault:'No sound'},
+  {id:'camera',name:'Camera',fault:'Blurry photos'},
+  {id:'board',name:'Mainboard',fault:'Mainboard failure'}
+];
+const MODELS = ['Pocket One','Nova Mini','Orbit Pro','Pixel Pop','Echo Plus'];
+function createRound(random = Math.random) {
+  let state = {mode:'idle',score:0,lives:3,streak:0,multiplier:1,repaired:0,attempts:0,ticket:0,part:PARTS[0],model:MODELS[0],endAt:0,ticketAt:0,ticketDuration:7000,lockedUntil:0,remaining:60000,ticketRemaining:7000};
+  let pauseAt=0,previous=-1;
+  const nextTicket = now => {
+    const choices = PARTS.map((p,i)=>i).filter(i=>i!==previous);
+    const index=choices[Math.min(choices.length-1,Math.floor(random()*choices.length))];
+    previous=index;state.part=PARTS[index];state.model=MODELS[Math.min(MODELS.length-1,Math.floor(random()*MODELS.length))];state.ticket++;
+    state.ticketDuration=Math.max(4500,7000-Math.floor(state.repaired/5)*450);state.ticketAt=now;state.ticketRemaining=state.ticketDuration;state.lockedUntil=now+180;
+  };
+  const end = reason => {state.mode='ended';state.reason=reason;state.lockedUntil=Infinity;};
+  const miss = (now,reason) => {state.lives--;state.attempts++;state.streak=0;state.multiplier=1;if(state.lives<=0)end('Three chances used');else nextTicket(now);return {kind:'miss',reason};};
+  const snapshot=()=>({...state,part:{...state.part}});
+  const api={
+    start(now){state={mode:'running',score:0,lives:3,streak:0,multiplier:1,repaired:0,attempts:0,ticket:0,part:PARTS[0],model:MODELS[0],endAt:now+60000,ticketAt:now,ticketDuration:7000,lockedUntil:now,remaining:60000,ticketRemaining:7000};previous=-1;nextTicket(now);state.lockedUntil=now;return snapshot();},
+    tick(now){if(state.mode!=='running')return null;state.remaining=Math.max(0,state.endAt-now);if(state.remaining<=0){end('60 seconds complete');return {kind:'end'};}state.ticketRemaining=Math.max(0,state.ticketDuration-(now-state.ticketAt));if(state.ticketRemaining<=0)return miss(now,'Ticket timed out');return null;},
+    choose(partId,now){if(!PARTS.some(p=>p.id===partId))throw new Error('Unknown spare part');if(state.mode!=='running')return {kind:'ignored'};const timed=api.tick(now);if(timed)return timed;if(now<state.lockedUntil)return {kind:'ignored'};const expected=state.part.name;if(partId!==state.part.id)return miss(now,'Needed: '+expected);state.attempts++;state.repaired++;state.streak++;const multiplier=state.multiplier;const speedBonus=Math.round(50*state.ticketRemaining/state.ticketDuration);const points=(100+speedBonus)*multiplier;state.score+=points;state.multiplier=Math.min(4,1+Math.floor(state.streak/3));nextTicket(now);return {kind:'correct',points,streak:state.streak};},
+    pause(now){if(state.mode!=='running')return false;api.tick(now);if(state.mode!=='running')return false;pauseAt=now;state.mode='paused';return true;},
+    resume(now){if(state.mode!=='paused')return false;const elapsed=now-pauseAt;state.endAt+=elapsed;state.ticketAt+=elapsed;state.lockedUntil+=elapsed;state.mode='running';return true;},
+    snapshot
+  };return api;
+}
+const round=createRound();
+const $=id=>document.getElementById(id);
+const buttons=[...document.querySelectorAll('[data-part]')];
+let frame=0,sessionBest=0,lastMode='idle';
+const number=n=>n.toLocaleString('en-IN');
+function showPanel(id){$('overlay').hidden=false;for(const panel of ['intro','paused','results'])$(panel).hidden=panel!==id;}
+function update(){
+  const s=round.snapshot();$('score').textContent=number(s.score);$('time').innerHTML=Math.ceil(s.remaining/1000)+'<span class="unit">s</span>';$('lives').textContent=Array.from({length:3},(_,i)=>i<s.lives?'●':'○').join(' ');$('lives').setAttribute('aria-label',s.lives+' chances left');$('combo').textContent='COMBO ×'+s.multiplier;
+  $('round-bar').style.width=(s.remaining/600)+'%';$('ticket-bar').style.width=(s.ticketRemaining/s.ticketDuration*100)+'%';$('ticket-time').textContent=(s.ticketRemaining/1000).toFixed(1)+'s';$('ticket-number').textContent='Repair ticket '+String(s.ticket).padStart(3,'0');$('model').textContent=s.model;$('fault').textContent=s.part.fault;
+  $('pause').disabled=s.mode!=='running';for(const button of buttons)button.disabled=s.mode!=='running';
+  if(s.mode==='running')$('overlay').hidden=true;
+  if(s.mode==='paused')showPanel('paused');
+  if(s.mode==='ended'&&lastMode!=='ended'){
+    sessionBest=Math.max(sessionBest,s.score);$('end-reason').textContent=s.reason;$('rating').textContent=s.repaired>=25?'Repair legend':s.repaired>=15?'Master technician':s.repaired>=8?'Quick fixer':'Repair rookie';$('final-score').textContent=number(s.score);$('repaired').textContent=s.repaired;$('accuracy').textContent=(s.attempts?Math.round(s.repaired/s.attempts*100):0)+'%';$('best').textContent=number(sessionBest);showPanel('results');$('restart').focus({preventScroll:true});
+  }
+  lastMode=s.mode;
+}
+function feedback(result,button){
+  if(!result||result.kind==='ignored'||result.kind==='end')return;
+  const correct=result.kind==='correct';$('feedback').textContent=correct?'+'+number(result.points)+' · '+result.streak+' in a row':result.reason;$('feedback').parentElement.classList.toggle('error',!correct);
+  $('bench').classList.remove('flash','shake');void $('bench').offsetWidth;$('bench').classList.add(correct?'flash':'shake');
+  if(button){button.classList.add(correct?'correct':'wrong');setTimeout(()=>button.classList.remove('correct','wrong'),170);}
+}
+function loop(){feedback(round.tick(performance.now()));update();if(round.snapshot().mode==='running')frame=requestAnimationFrame(loop);}
+function start(){cancelAnimationFrame(frame);round.start(performance.now());$('feedback').textContent='Match the fault. Keep the streak.';$('feedback').parentElement.classList.remove('error');buttons.forEach(b=>b.classList.remove('correct','wrong'));update();frame=requestAnimationFrame(loop);buttons[0].focus({preventScroll:true});}
+function choose(id,button){feedback(round.choose(id,performance.now()),button);update();}
+function pause(){if(round.pause(performance.now())){cancelAnimationFrame(frame);update();$('resume').focus({preventScroll:true});}else update();}
+function resume(){if(round.resume(performance.now())){update();frame=requestAnimationFrame(loop);buttons[0].focus({preventScroll:true});}}
+$('start').addEventListener('click',start);$('restart').addEventListener('click',start);$('pause').addEventListener('click',pause);$('resume').addEventListener('click',resume);
+buttons.forEach(button=>button.addEventListener('click',()=>choose(button.dataset.part,button)));
+document.addEventListener('keydown',event=>{if(event.repeat||event.altKey||event.ctrlKey||event.metaKey)return;const i=Number(event.key)-1;if(/^[1-6]$/.test(event.key)&&round.snapshot().mode==='running'){event.preventDefault();choose(PARTS[i].id,buttons[i]);}if(event.key==='Escape'){if(round.snapshot().mode==='running')pause();else if(round.snapshot().mode==='paused')resume();}});
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&round.snapshot().mode==='running')pause();});
+// Optional agent controls share the visible game state and never transmit it.
+if(document.modelContext?.registerTool){
+  const lifecycle=new AbortController();
+  const cleanState=()=>{const s=round.snapshot();return {mode:s.mode,score:s.score,chances:s.lives,secondsLeft:Math.ceil(s.remaining/1000),fault:s.part.fault,combo:s.multiplier};};
+  const register=tool=>{try{Promise.resolve(document.modelContext.registerTool(tool,{signal:lifecycle.signal})).catch(()=>{});}catch{}};
+  register({name:'read_repair_round',description:'Read the current virtual repair round and its fault.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:true},execute:()=>cleanState()});
+  register({name:'start_repair_round',description:'Start or restart a 60-second virtual repair round, resetting this round’s score.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:false},execute:()=>{start();return cleanState();}});
+  register({name:'choose_repair_part',description:'Choose a spare part for the current ticket. Wrong choices use one chance.',inputSchema:{type:'object',properties:{part:{type:'string',enum:PARTS.map(p=>p.id)}},required:['part'],additionalProperties:false},annotations:{readOnlyHint:false},execute:input=>{if(!input||typeof input!=='object'||Object.keys(input).length!==1||!PARTS.some(p=>p.id===input.part))throw new Error('Choose a valid spare part');if(round.snapshot().mode!=='running')throw new Error('Start or resume the round first');choose(input.part,buttons.find(b=>b.dataset.part===input.part));return cleanState();}});
+  addEventListener('pagehide',()=>lifecycle.abort(),{once:true});
+}
+</script>
+</body>
+</html>
