@@ -357,7 +357,7 @@ test("repair command offers guided diagnosis and Mini App services", async () =>
   await handleBotUpdate(message("/repair"), ctx);
   const rows = calls[0].body.reply_markup.inline_keyboard;
   assert.equal(rows[0][0].callback_data, "repair_start");
-  assert.equal(rows[1][0].web_app.url, "https://mrmobiles.in/?category=service");
+  assert.equal(rows[1][0].web_app.url, "https://mrmobiles.in/?v=2026-10-03.repair-history-v2&category=service");
 });
 
 test("group updates never retrieve or publish customer orders", async () => {
