@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 
-export const BOT_WORKFLOW_VERSION = "2026-10-03.repairrush";
+export const BOT_WORKFLOW_VERSION = "2026-10-03.repair-history-v2";
 export const REPAIR_RUSH_SHORT_NAME = "repairrush";
 export const REPAIR_RUSH_BOT_USERNAME = "MrMobileDoctor_bot";
 export const BOT_COMMANDS = [
@@ -35,6 +35,12 @@ export function miniAppUrl(requestUrl: string, configured?: string): string {
   if (url.protocol !== "https:" || url.username || url.password) {
     throw new Error("TELEGRAM_MINI_APP_URL must be an HTTPS URL without credentials.");
   }
+  return url.toString();
+}
+
+export function versionedMiniAppUrl(appUrl: string): string {
+  const url = new URL(appUrl);
+  url.searchParams.set("v", BOT_WORKFLOW_VERSION);
   return url.toString();
 }
 
@@ -143,7 +149,7 @@ function stockLabel(product: InlineProduct): string {
 }
 
 function productWebAppUrl(appUrl: string, product: InlineProduct, buy = false) {
-  const url = new URL(appUrl);
+  const url = new URL(versionedMiniAppUrl(appUrl));
   url.searchParams.set("category", product.category);
   url.searchParams.set("product", product.id);
   if (buy) url.searchParams.set("buy", "1");
@@ -187,7 +193,7 @@ function aiKeyboard(context: BotContext, products: InlineProduct[], responseId?:
     ]);
   }
 
-  rows.push([{ text: "🛍 Open Shop", web_app: { url: context.appUrl } }]);
+  rows.push([{ text: "🛍 Open Shop", web_app: { url: versionedMiniAppUrl(context.appUrl) } }]);
   return { inline_keyboard: rows };
 }
 
@@ -222,7 +228,7 @@ function homeKeyboard(context: BotContext) {
   return {
     inline_keyboard: [
       [
-        { text: "🛍 Shop", web_app: { url: context.appUrl } },
+        { text: "🛍 Shop", web_app: { url: versionedMiniAppUrl(context.appUrl) } },
         { text: "🤖 AI Help", callback_data: "ai_help" }
       ],
       [
