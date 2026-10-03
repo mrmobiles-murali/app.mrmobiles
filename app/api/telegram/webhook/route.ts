@@ -179,11 +179,14 @@ export async function POST(request: NextRequest) {
             text: [
               "👤 Human support requested",
               `Name: ${name}`,
-              `Customer ID: ${userId}`,
-              "",
-              "Reply in your private chat with the bot:",
-              `/reply ${userId} your message`
-            ].join("\n")
+              `Customer ID: ${userId}`
+            ].join("\n"),
+            reply_markup: {
+              inline_keyboard: [[
+                { text: "⚡ Send Default Reply", callback_data: `reply_default:${userId}` },
+                { text: "✍️ Custom Reply", callback_data: `reply_customer:${userId}` }
+              ]]
+            }
           });
           return true;
         } catch {
@@ -212,11 +215,14 @@ export async function POST(request: NextRequest) {
                   "",
                   "Admin tools:",
                   `/repairupdate ${ticket.reference_code} diagnosing Device inspection started`,
-                  `/repairquote ${ticket.reference_code} 2500 Display replacement quote`,
-                  "",
-                  "Reply directly:",
-                  `/reply ${userId} your message`
-                ].join("\n")
+                  `/repairquote ${ticket.reference_code} 2500 Display replacement quote`
+                ].join("\n"),
+                reply_markup: {
+                  inline_keyboard: [[
+                    { text: "⚡ Send Default Reply", callback_data: `reply_default:${userId}` },
+                    { text: "✍️ Custom Reply", callback_data: `reply_customer:${userId}` }
+                  ]]
+                }
               });
             } catch {
               // Ticket remains valid even if the admin notification is temporarily unavailable.

@@ -3,6 +3,11 @@ import crypto from "node:crypto";
 export const BOT_WORKFLOW_VERSION = "2026-10-03.repair-history-v2";
 export const REPAIR_RUSH_SHORT_NAME = "repairrush";
 export const REPAIR_RUSH_BOT_USERNAME = "MrMobileDoctor_bot";
+export const DEFAULT_REPAIR_REPLY = [
+  "Your repair request has been received ✅",
+  "We’ll contact you soon.",
+  "Don’t worry — MR MOBILES is here. We connect you to the world 🌎"
+].join("\n");
 export const BOT_COMMANDS = [
   { command: "start", description: "Welcome and open Mr Mobiles" },
   { command: "menu", description: "Open the Mr Mobiles control menu" },
@@ -278,6 +283,65 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
   }
   if (callbackQuery && typeof callbackQuery.id === "string" &&
       Number.isSafeInteger(callbackQuery?.from?.id) && !callbackQuery?.from?.is_bot &&
+      Number.isSafeInteger(callbackQuery?.message?.chat?.id)) {
+    const adminId = callbackQuery.from.id as number;
+    const callbackChatId = callbackQuery.message.chat.id as number;
+    const callbackData = typeof callbackQuery.data === "string" ? callbackQuery.data : "";
+    const replyMatch = callbackData.match(/^reply_(default|customer):(\d+)$/);
+
+    if (replyMatch) {
+      if (!context.admins.includes(adminId)) {
+        await safeAnswerCallback(context, callbackQuery.id, "This action is for the Mr Mobiles support team.");
+        return;
+      }
+
+      const target = Number(replyMatch[2]);
+      if (!Number.isSafeInteger(target) || target <= 0) {
+        await safeAnswerCallback(context, callbackQuery.id, "Invalid customer ID.");
+        return;
+      }
+
+      if (replyMatch[1] === "default") {
+        try {
+          await context.call("sendMessage", {
+            chat_id: target,
+            text: `💬 Mr Mobiles Support\n\n${DEFAULT_REPAIR_REPLY}`
+          });
+          await safeAnswerCallback(context, callbackQuery.id, "Default reply sent ✅");
+          await context.call("sendMessage", {
+            chat_id: callbackChatId,
+            text: `✅ Default reply sent to customer ${target}.`
+          });
+        } catch {
+          await safeAnswerCallback(context, callbackQuery.id, "Reply could not be delivered.");
+        }
+        return;
+      }
+
+      await safeAnswerCallback(context, callbackQuery.id, "Customer ID added automatically.");
+      await context.call("sendMessage", {
+        chat_id: callbackChatId,
+        text: [
+          "↩️ MR MOBILES reply",
+          `Customer ID: ${target}`,
+          "",
+          "Suggested reply:",
+          DEFAULT_REPAIR_REPLY,
+          "",
+          "Reply to this message with the final text. You can edit the suggestion before sending."
+        ].join("\n"),
+        reply_markup: {
+          force_reply: true,
+          selective: true,
+          input_field_placeholder: "Edit reply and send"
+        }
+      });
+      return;
+    }
+  }
+
+  if (callbackQuery && typeof callbackQuery.id === "string" &&
+      Number.isSafeInteger(callbackQuery?.from?.id) && !callbackQuery?.from?.is_bot &&
       callbackQuery?.message?.chat?.type === "private" &&
       Number.isSafeInteger(callbackQuery?.message?.chat?.id)) {
     const userId = callbackQuery.from.id as number;
@@ -523,6 +587,38 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
   }
 
   const message = (update as any)?.message;
+  if (message && Number.isSafeInteger(message?.chat?.id) &&
+      Number.isSafeInteger(message?.from?.id) && !message?.from?.is_bot) {
+    const senderId = message.from.id as number;
+    const replyPrompt = typeof message?.reply_to_message?.text === "string"
+      ? message.reply_to_message.text
+      : "";
+    const targetMatch = replyPrompt.match(/^↩️ MR MOBILES reply\nCustomer ID: (\d+)\n/);
+    const adminReply = typeof message.text === "string" ? message.text.trim() : "";
+
+    if (targetMatch && context.admins.includes(senderId) && adminReply && !adminReply.startsWith("/")) {
+      const target = Number(targetMatch[1]);
+      if (Number.isSafeInteger(target) && target > 0 && adminReply.length <= 3000) {
+        try {
+          await context.call("sendMessage", {
+            chat_id: target,
+            text: `💬 Mr Mobiles Support\n\n${adminReply}`
+          });
+          await context.call("sendMessage", {
+            chat_id: message.chat.id,
+            text: `✅ Reply sent to customer ${target}.`
+          });
+        } catch {
+          await context.call("sendMessage", {
+            chat_id: message.chat.id,
+            text: "The reply could not be delivered. The customer may have blocked the bot."
+          });
+        }
+        return;
+      }
+    }
+  }
+
   if (message?.chat?.type !== "private" || !Number.isSafeInteger(message?.chat?.id) ||
       !Number.isSafeInteger(message?.from?.id) || message.from.is_bot) return;
 
@@ -718,7 +814,13 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
     try {
       await context.call("sendMessage", {
         chat_id: context.supportChatId,
-        text: `📩 Customer support request\nName: ${name || "Customer"}\nCustomer ID: ${userId}\n\n${question}\n\nReply in your private chat with the bot:\n/reply ${userId} your message`
+        text: `📩 Customer support request\nName: ${name || "Customer"}\nCustomer ID: ${userId}\n\n${question}`,
+        reply_markup: {
+          inline_keyboard: [[
+            { text: "⚡ Send Default Reply", callback_data: `reply_default:${userId}` },
+            { text: "✍️ Custom Reply", callback_data: `reply_customer:${userId}` }
+          ]]
+        }
       });
     } catch {
       await send({ text: "We could not forward your message to support right now. Please email contact@mrmobiles.in or try again later." });
