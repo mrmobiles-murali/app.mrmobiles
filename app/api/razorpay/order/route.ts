@@ -3,6 +3,7 @@ import { priceInventoryCart } from "@/lib/server-catalog";
 import { createRazorpayOrder } from "@/lib/razorpay";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { validateTelegramInitData } from "@/lib/telegram-auth";
+import { parseCustomPaymentAmount } from "@/lib/custom-payment";
 
 export async function POST(request: NextRequest) {
   try {
@@ -11,9 +12,35 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const cart = Array.isArray(body?.cart) ? body.cart : [];
-    if (!cart.length) throw new Error("Cart is empty.");
+    const customAmountSupplied =
+      body?.customAmount !== undefined &&
+      body?.customAmount !== null &&
+      String(body.customAmount).trim() !== "";
 
-    const priced = await priceInventoryCart(cart);
+    if (cart.length && customAmountSupplied) {
+      throw new Error("Use either cart checkout or custom payment, not both.");
+    }
+    if (!cart.length && !customAmountSupplied) {
+      throw new Error("Cart is empty.");
+    }
+
+    const customAmountPaise = customAmountSupplied
+      ? parseCustomPaymentAmount(body.customAmount)
+      : null;
+
+    const priced = customAmountPaise
+      ? {
+          amountPaise: customAmountPaise,
+          items: [{
+            productId: "custom-payment",
+            name: "Custom / Test Payment",
+            qty: 1,
+            unitPricePaise: customAmountPaise,
+            lineTotalPaise: customAmountPaise
+          }]
+        }
+      : await priceInventoryCart(cart);
+
     const supabase = getSupabaseAdmin();
 
     // Recover payment attempts interrupted before Razorpay returned an order id.
@@ -30,6 +57,7 @@ export async function POST(request: NextRequest) {
       .eq("status", "creating_payment")
       .lt("updated_at", staleCutoff);
 
+    const customPayment = customAmountPaise !== null;
     const { data: orderRow, error: insertError } = await supabase
       .from("orders")
       .insert({
@@ -39,7 +67,9 @@ export async function POST(request: NextRequest) {
         currency: "INR",
         status: "creating_payment",
         workflow_status: "payment_processing",
-        workflow_note: "Creating secure Razorpay checkout.",
+        workflow_note: customPayment
+          ? "Creating secure custom payment checkout."
+          : "Creating secure Razorpay checkout.",
         cart: priced.items
       })
       .select("id")
@@ -51,10 +81,11 @@ export async function POST(request: NextRequest) {
     try {
       razorpayResult = await createRazorpayOrder({
         amountPaise: priced.amountPaise,
-        receipt: `mr_${String(orderRow.id).replaceAll("-", "").slice(0, 30)}`,
+        receipt: `${customPayment ? "mrt" : "mr"}_${String(orderRow.id).replaceAll("-", "").slice(0, 29)}`,
         notes: {
           internal_order_id: orderRow.id,
-          telegram_user_id: String(user.id)
+          telegram_user_id: String(user.id),
+          payment_type: customPayment ? "custom_test" : "catalog"
         }
       });
     } catch (paymentError) {
@@ -77,7 +108,9 @@ export async function POST(request: NextRequest) {
       .update({
         status: "created",
         workflow_status: "awaiting_payment",
-        workflow_note: "Secure checkout created. Awaiting customer payment.",
+        workflow_note: customPayment
+          ? "Custom payment checkout created. Awaiting customer payment."
+          : "Secure checkout created. Awaiting customer payment.",
         razorpay_order_id: order.id,
         updated_at: new Date().toISOString()
       })
@@ -91,7 +124,8 @@ export async function POST(request: NextRequest) {
       orderId: order.id,
       amount: order.amount,
       currency: order.currency,
-      internalOrderId: orderRow.id
+      internalOrderId: orderRow.id,
+      customPayment
     });
   } catch (error) {
     return NextResponse.json(
