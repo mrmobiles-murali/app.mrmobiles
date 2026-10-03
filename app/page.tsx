@@ -96,7 +96,7 @@ export default function Home() {
     fetch("/api/catalog")
       .then((r) => r.json())
       .then((data) => {
-        const liveProducts = Array.isArray(data) && data.length ? data as StoreProduct[] : catalog;
+        const liveProducts: StoreProduct[] = Array.isArray(data) && data.length ? data as StoreProduct[] : catalog;
         setProducts(liveProducts);
 
         const selected = requestedProduct
@@ -149,7 +149,7 @@ export default function Home() {
       fetch("/api/catalog")
         .then((r) => r.json())
         .then((data) => {
-          const liveProducts = Array.isArray(data) && data.length ? data as StoreProduct[] : catalog;
+          const liveProducts: StoreProduct[] = Array.isArray(data) && data.length ? data as StoreProduct[] : catalog;
           setProducts(liveProducts);
           const selected = liveProducts.find((product) => product.id === productId);
           if (!selected) return;
