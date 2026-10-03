@@ -388,10 +388,36 @@ export default function Home() {
     tg.showAlert("Order received ✅\nPayment can be completed after Mr Mobiles confirms the order.");
   }
 
+  function openOwnDomainPayment(order: any, description: string) {
+    const bridgeUrl = String(order?.bridgeUrl || "");
+    const bridgeToken = String(order?.bridgeToken || "");
+    if (!bridgeUrl.startsWith("https://mrmobiles.in/") || !bridgeToken) {
+      throw new Error("Secure Mr Mobiles payment bridge is unavailable.");
+    }
+
+    const tg = window.Telegram?.WebApp;
+    const user = tg?.initDataUnsafe?.user;
+    const state = {
+      keyId: String(order.keyId || ""),
+      amount: Number(order.amount || 0),
+      currency: String(order.currency || "INR"),
+      orderId: String(order.orderId || ""),
+      internalOrderId: String(order.internalOrderId || ""),
+      bridgeToken,
+      description,
+      customerName: [user?.first_name, user?.last_name].filter(Boolean).join(" ")
+    };
+
+    if (!state.keyId || !state.amount || !state.orderId || !state.internalOrderId) {
+      throw new Error("Incomplete secure payment session.");
+    }
+
+    window.location.assign(`${bridgeUrl}#${encodeURIComponent(JSON.stringify(state))}`);
+  }
+
   async function payWithRazorpay() {
     const tg = window.Telegram?.WebApp;
     if (!tg) throw new Error("Open this app from Telegram.");
-    if (!window.Razorpay) throw new Error("Razorpay Checkout is still loading.");
 
     const cartPayload = Object.entries(cart).map(([productId, qty]) => ({ productId, qty }));
 
@@ -407,67 +433,7 @@ export default function Home() {
     const order = await orderResponse.json();
     if (!orderResponse.ok) throw new Error(order.error || "Could not create order.");
 
-    const user = tg.initDataUnsafe?.user;
-
-    const rzp = new window.Razorpay({
-      key: order.keyId,
-      amount: order.amount,
-      currency: order.currency,
-      name: "Mr Mobiles",
-      description: "Telegram Mini App order",
-      order_id: order.orderId,
-      prefill: {
-        name: [user?.first_name, user?.last_name].filter(Boolean).join(" ")
-      },
-      notes: {
-        internal_order_id: order.internalOrderId
-      },
-      theme: { color: "#14b8a6" },
-      handler: async (response: any) => {
-        const verifyResponse = await fetch("/api/razorpay/verify", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-telegram-init-data": tg.initData
-          },
-          body: JSON.stringify(response)
-        });
-
-        const verified = await verifyResponse.json();
-        if (!verifyResponse.ok) {
-          setMessage(verified.error || "Payment verification failed.");
-          tg.HapticFeedback?.notificationOccurred("error");
-          return;
-        }
-
-        setCart({});
-        setMessage(`Payment successful. Order ${verified.internalOrderId}`);
-        tg.HapticFeedback?.notificationOccurred("success");
-        tg.showAlert("Payment successful ✅\nYour Mr Mobiles order has been confirmed.");
-        window.location.assign(
-          `/?payment=success&order=${encodeURIComponent(verified.internalOrderId)}`
-        );
-      }
-    });
-
-    rzp.on("payment.failed", (response: any) => {
-      const reason = response?.error?.description || "Payment failed. Please try again.";
-      setMessage(reason);
-      tg.HapticFeedback?.notificationOccurred("error");
-      fetch("/api/razorpay/failure", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-telegram-init-data": tg.initData
-        },
-        body: JSON.stringify({
-          internalOrderId: order.internalOrderId,
-          reason
-        })
-      }).catch(() => undefined);
-    });
-
-    rzp.open();
+    openOwnDomainPayment(order, "Telegram Mini App order");
   }
 
   async function payCustomAmount() {
@@ -482,10 +448,6 @@ export default function Home() {
     }
     if (!paymentsEnabled) {
       setMessage("Online payment is temporarily unavailable.");
-      return;
-    }
-    if (!window.Razorpay) {
-      setMessage("Razorpay Checkout is still loading.");
       return;
     }
 
@@ -511,66 +473,9 @@ export default function Home() {
       const order = await orderResponse.json();
       if (!orderResponse.ok) throw new Error(order.error || "Could not create custom payment.");
 
-      const user = tg.initDataUnsafe?.user;
-      const rzp = new window.Razorpay({
-        key: order.keyId,
-        amount: order.amount,
-        currency: order.currency,
-        name: "Mr Mobiles",
-        description: "Custom / Test Payment",
-        order_id: order.orderId,
-        prefill: {
-          name: [user?.first_name, user?.last_name].filter(Boolean).join(" ")
-        },
-        notes: {
-          internal_order_id: order.internalOrderId,
-          payment_type: "custom_test"
-        },
-        theme: { color: "#14b8a6" },
-        handler: async (response: any) => {
-          const verifyResponse = await fetch("/api/razorpay/verify", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "x-telegram-init-data": tg.initData
-            },
-            body: JSON.stringify(response)
-          });
-
-          const verified = await verifyResponse.json();
-          if (!verifyResponse.ok) {
-            setMessage(verified.error || "Payment verification failed.");
-            tg.HapticFeedback?.notificationOccurred("error");
-            return;
-          }
-
-          setMessage(`Custom payment ${money(order.amount)} successful ✅ Order ${verified.internalOrderId}`);
-          tg.HapticFeedback?.notificationOccurred("success");
-          tg.showAlert(`Custom payment successful ✅\nAmount: ${money(order.amount)}`);
-        }
-      });
-
-      rzp.on("payment.failed", (response: any) => {
-        const reason = response?.error?.description || "Payment failed. Please try again.";
-        setMessage(reason);
-        tg.HapticFeedback?.notificationOccurred("error");
-        fetch("/api/razorpay/failure", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-telegram-init-data": tg.initData
-          },
-          body: JSON.stringify({
-            internalOrderId: order.internalOrderId,
-            reason
-          })
-        }).catch(() => undefined);
-      });
-
-      rzp.open();
+      openOwnDomainPayment(order, "Custom / Test Payment");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Custom payment failed.");
-    } finally {
       setCustomLoading(false);
     }
   }
@@ -776,7 +681,7 @@ export default function Home() {
                 {customLoading ? "Preparing…" : "Pay custom amount"}
               </button>
             </div>
-            <small id="custom-payment-help">Allowed: ₹1–₹10,000. Razorpay opens before any charge is made.</small>
+            <small id="custom-payment-help">Allowed: ₹1–₹10,000. Secure checkout opens on mrmobiles.in.</small>
           </div>
         </section>
       )}
@@ -795,7 +700,7 @@ export default function Home() {
 
       <footer>
         {paymentsEnabled
-          ? "Payments processed securely by Razorpay. Order verification happens on the Mr Mobiles server."
+          ? "Payments open on mrmobiles.in and are verified securely by the Mr Mobiles server."
           : "Online payment is temporarily unavailable. Orders can still be placed securely through Telegram."}
       </footer>
 
