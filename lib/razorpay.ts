@@ -7,6 +7,15 @@ function getCredentials() {
   return { keyId, keySecret };
 }
 
+export type RazorpayPayment = {
+  id: string;
+  amount: number;
+  currency: string;
+  status: string;
+  captured?: boolean;
+  order_id?: string | null;
+};
+
 export async function createRazorpayOrder(input: {
   amountPaise: number;
   receipt: string;
@@ -74,7 +83,6 @@ export function verifyWebhookSignature(rawBody: string, signature: string) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-
 function razorpayAuthHeader() {
   const { keyId, keySecret } = getCredentials();
   return "Basic " + Buffer.from(`${keyId}:${keySecret}`).toString("base64");
@@ -90,14 +98,35 @@ export async function fetchRazorpayPayment(paymentId: string) {
   if (!response.ok) {
     throw new Error(data?.error?.description || "Could not fetch Razorpay payment.");
   }
-  return data as {
-    id: string;
-    amount: number;
-    currency: string;
-    status: string;
-    captured?: boolean;
-    order_id?: string | null;
-  };
+  return data as RazorpayPayment;
+}
+
+export async function captureRazorpayPayment(input: {
+  paymentId: string;
+  amountPaise: number;
+  currency: string;
+}) {
+  const response = await fetch(
+    `https://api.razorpay.com/v1/payments/${encodeURIComponent(input.paymentId)}/capture`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: razorpayAuthHeader(),
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        amount: input.amountPaise,
+        currency: input.currency.toUpperCase()
+      }),
+      cache: "no-store",
+      signal: AbortSignal.timeout(12000)
+    }
+  );
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data?.error?.description || "Could not capture Razorpay payment.");
+  }
+  return data as RazorpayPayment;
 }
 
 export async function fetchRazorpayOrderPayments(orderId: string) {
@@ -110,12 +139,5 @@ export async function fetchRazorpayOrderPayments(orderId: string) {
   if (!response.ok) {
     throw new Error(data?.error?.description || "Could not fetch Razorpay order payments.");
   }
-  return (Array.isArray(data?.items) ? data.items : []) as Array<{
-    id: string;
-    amount: number;
-    currency: string;
-    status: string;
-    captured?: boolean;
-    order_id?: string | null;
-  }>;
+  return (Array.isArray(data?.items) ? data.items : []) as RazorpayPayment[];
 }
