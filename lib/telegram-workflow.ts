@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 
-export const BOT_WORKFLOW_VERSION = "2026-10-04.web-checkout";
+export const BOT_WORKFLOW_VERSION = "2026-10-03.ops-final";
 export const REPAIR_RUSH_SHORT_NAME = "repairrush";
 export const REPAIR_RUSH_BOT_USERNAME = "MrMobileDoctor_bot";
 const WEBSITE_PRODUCT_NAMES: Record<number, string> = {
