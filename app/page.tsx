@@ -95,7 +95,13 @@ export default function Home() {
     tg.expand();
     tg.setHeaderColor("#0b0d10");
     tg.setBackgroundColor("#0b0d10");
+    tg.setBottomBarColor?.("#0b0d10");
     tg.enableClosingConfirmation();
+    try {
+      tg.requestFullscreen?.();
+    } catch {
+      // Older Telegram clients may not support fullscreen requests.
+    }
 
     fetch("/api/telegram/session", {
       method: "POST",
@@ -138,6 +144,54 @@ export default function Home() {
   );
 
   const count = Object.values(cart).reduce((a, b) => a + b, 0);
+
+  useEffect(() => {
+    const mainButton = window.Telegram?.WebApp.MainButton;
+    if (!mainButton) return;
+
+    const handleCheckout = () => {
+      document.querySelector<HTMLButtonElement>("[data-checkout-button]")?.click();
+    };
+
+    if (!count) {
+      mainButton.hide();
+      return () => mainButton.hide();
+    }
+
+    mainButton.setText(
+      paymentsEnabled ? `PAY ${money(total)}` : `PLACE ORDER · ${money(total)}`
+    );
+    if (loading || !sessionReady) mainButton.disable();
+    else mainButton.enable();
+
+    mainButton.onClick(handleCheckout);
+    mainButton.show();
+
+    return () => {
+      mainButton.offClick(handleCheckout);
+      mainButton.hide();
+    };
+  }, [count, loading, paymentsEnabled, sessionReady, total]);
+
+  useEffect(() => {
+    const backButton = window.Telegram?.WebApp.BackButton;
+    if (!backButton) return;
+
+    const handleBack = () => setCategory("all");
+
+    if (category === "all") {
+      backButton.hide();
+      return () => backButton.hide();
+    }
+
+    backButton.onClick(handleBack);
+    backButton.show();
+
+    return () => {
+      backButton.offClick(handleBack);
+      backButton.hide();
+    };
+  }, [category]);
 
   function maxQty(productId: string) {
     const product = products.find((item) => item.id === productId);
@@ -360,7 +414,7 @@ export default function Home() {
           <span>{count} item{count === 1 ? "" : "s"}</span>
           <strong>{money(total)}</strong>
         </div>
-        <button disabled={loading || !sessionReady || count === 0} onClick={checkout}>
+        <button data-checkout-button disabled={loading || !sessionReady || count === 0} onClick={checkout}>
           {loading ? "Preparing…" : paymentsEnabled ? "Pay securely" : "Place order"}
         </button>
       </section>
