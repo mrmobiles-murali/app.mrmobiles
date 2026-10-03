@@ -75,6 +75,8 @@ export default function Home() {
   const [products, setProducts] = useState<StoreProduct[]>(catalog);
   const [category, setCategory] = useState<"all" | Product["category"]>("all");
   const [loading, setLoading] = useState(false);
+  const [customLoading, setCustomLoading] = useState(false);
+  const [customAmount, setCustomAmount] = useState("1");
   const [sessionReady, setSessionReady] = useState(false);
   const [paymentsEnabled, setPaymentsEnabled] = useState(false);
   const [repairs, setRepairs] = useState<RepairItem[]>([]);
