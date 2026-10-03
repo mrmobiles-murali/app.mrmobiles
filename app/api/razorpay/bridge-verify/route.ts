@@ -7,6 +7,7 @@ import {
   verifyPaymentSignature
 } from "@/lib/razorpay";
 import { sendTelegramMessage } from "@/lib/telegram-bot";
+import { advanceRepairAfterPaidOrder } from "@/lib/repair-payment-server";
 
 function cleanReason(value: unknown) {
   return String(value || "Payment failed.").replace(/[\r\n\t]+/g, " ").trim().slice(0, 500);
@@ -27,7 +28,7 @@ export async function POST(request: NextRequest) {
 
     const { data: order, error } = await supabase
       .from("orders")
-      .select("id, telegram_user_id, amount_paise, currency, razorpay_order_id, razorpay_payment_id, status")
+      .select("id, telegram_user_id, amount_paise, currency, razorpay_order_id, razorpay_payment_id, status, cart")
       .eq("id", token.internalOrderId)
       .eq("telegram_user_id", token.telegramUserId)
       .eq("razorpay_order_id", token.razorpayOrderId)
@@ -61,11 +62,17 @@ export async function POST(request: NextRequest) {
     }
 
     if (order.status === "paid") {
+      const repair = await advanceRepairAfterPaidOrder({
+        telegramUserId: Number(order.telegram_user_id),
+        amountPaise: Number(order.amount_paise),
+        cart: order.cart
+      });
       return NextResponse.json({
         ok: true,
         internalOrderId: order.id,
         paymentId: order.razorpay_payment_id || paymentId,
-        alreadyVerified: true
+        alreadyVerified: true,
+        repairReference: repair?.referenceCode || null
       });
     }
 
@@ -160,33 +167,78 @@ export async function POST(request: NextRequest) {
 
     if (updated) {
       const appUrl = process.env.TELEGRAM_MINI_APP_URL || "https://app.mrmobiles.in";
+      const repair = await advanceRepairAfterPaidOrder({
+        telegramUserId: Number(order.telegram_user_id),
+        amountPaise: Number(order.amount_paise),
+        cart: order.cart
+      });
+
       await sendTelegramMessage(
         Number(order.telegram_user_id),
         [
           "✅ <b>Payment successful</b>",
           "",
           `Amount: <b>${formatInr(Number(order.amount_paise))}</b>`,
+          repair?.referenceCode ? `Repair: <code>${repair.referenceCode}</code>` : "",
           `Order: <code>${order.id}</code>`,
           `Payment: <code>${paymentId}</code>`,
           "Status: <b>Paid & confirmed</b>",
+          repair?.referenceCode ? "Repair status: <b>In progress</b>" : "",
           "",
           "Securely processed via mrmobiles.in.",
           "Thank you for choosing Mr Mobiles 💙"
-        ].join("\n"),
+        ].filter(Boolean).join("\n"),
         {
           replyMarkup: {
-            inline_keyboard: [
-              [
-                { text: "👤 My Account", callback_data: "account_summary" },
-                { text: "🧾 Orders", callback_data: "orders_latest" }
-              ],
-              [
-                { text: "🛍 Shop Again", web_app: { url: appUrl } }
-              ]
-            ]
+            inline_keyboard: repair?.referenceCode
+              ? [
+                  [{ text: "📍 Track Repair", callback_data: `repair_status:${repair.referenceCode}` }],
+                  [
+                    { text: "👤 My Account", callback_data: "account_summary" },
+                    { text: "🧾 Orders", callback_data: "orders_latest" }
+                  ]
+                ]
+              : [
+                  [
+                    { text: "👤 My Account", callback_data: "account_summary" },
+                    { text: "🧾 Orders", callback_data: "orders_latest" }
+                  ],
+                  [{ text: "🛍 Shop Again", web_app: { url: appUrl } }]
+                ]
           }
         }
       );
+
+      if (repair?.referenceCode) {
+        const supportCandidate = process.env.TELEGRAM_SUPPORT_CHAT_ID;
+        const adminCandidate = String(process.env.TELEGRAM_ADMIN_IDS || "")
+          .split(",")
+          .map((value) => value.trim())
+          .find((value) => /^\d+$/.test(value));
+        const supportChatId = /^-?\d+$/.test(String(supportCandidate || ""))
+          ? Number(supportCandidate)
+          : adminCandidate
+            ? Number(adminCandidate)
+            : null;
+
+        if (supportChatId && supportChatId !== Number(order.telegram_user_id)) {
+          try {
+            await sendTelegramMessage(
+              supportChatId,
+              [
+                "💳 <b>Repair payment received</b>",
+                `Repair: <code>${repair.referenceCode}</code>`,
+                `Amount: <b>${formatInr(Number(order.amount_paise))}</b>`,
+                `Order: <code>${order.id}</code>`,
+                `Payment: <code>${paymentId}</code>`,
+                repair.advanced ? "Workflow: <b>moved to repairing</b>" : `Workflow: <b>${repair.status || "confirmed"}</b>`
+              ].join("\n")
+            );
+          } catch {
+            // Payment and repair state remain authoritative if admin notification is unavailable.
+          }
+        }
+      }
     }
 
     return NextResponse.json({
