@@ -102,9 +102,16 @@ export async function searchInventoryProducts(query: string): Promise<InventoryP
         product.id,
         ...(product.searchAliases || [])
       ].join(" ").toLowerCase();
+      const name = product.name.toLowerCase();
+      const brand = (product.brand || "").toLowerCase();
+      const model = (product.model || "").toLowerCase();
       const score = terms.length
-        ? terms.reduce((sum, term) => sum + (haystack.includes(term) ? 1 : 0), 0)
-        : 1;
+        ? terms.reduce((sum, term) => {
+            if (name.split(/\\s+/).includes(term)) return sum + 3;
+            if (brand.split(/\\s+/).includes(term) || model.split(/\\s+/).includes(term)) return sum + 3;
+            return sum + (haystack.includes(term) ? 1 : 0);
+          }, 0)
+        : 0;
       return { product, score };
     })
     .filter(({ score }) => score > 0)
