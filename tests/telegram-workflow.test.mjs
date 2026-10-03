@@ -429,6 +429,114 @@ test("human support callback performs a one-tap handoff", async () => {
   assert.equal(calls[1].method, "sendMessage");
 });
 
+test("account command shows orders repairs spend and loyalty points", async () => {
+  const { ctx, calls } = context({
+    accountSummary: async userId => {
+      assert.equal(userId, 42);
+      return {
+        orderCount: 3,
+        paidOrderCount: 2,
+        paidSpendPaise: 450000,
+        loyaltyPoints: 45,
+        repairCount: 2,
+        activeRepairs: 1,
+        savedDevices: 2
+      };
+    }
+  });
+  await handleBotUpdate(message("/account"), ctx);
+  assert.match(calls[0].body.text, /Mr Mobiles Account/);
+  assert.match(calls[0].body.text, /MR Points: 45/);
+  assert.match(calls[0].body.text, /₹4,500/);
+});
+
+test("refer command generates a deep link bound to the authenticated Telegram user", async () => {
+  const { ctx, calls } = context();
+  await handleBotUpdate(message("/refer"), ctx);
+  assert.match(calls[0].body.text, /t\.me\/MrMobilesTestBot\?start=ref_42/);
+});
+
+test("referral start records first touch without allowing self referral", async () => {
+  let recorded;
+  const { ctx, calls } = context({
+    recordReferral: async (referredUserId, referrerUserId, source) => {
+      recorded = { referredUserId, referrerUserId, source };
+      return true;
+    }
+  });
+  await handleBotUpdate(message("/start ref_99"), ctx);
+  assert.deepEqual(recorded, { referredUserId: 42, referrerUserId: 99, source: "bot_start" });
+  assert.match(calls[0].body.text, /Referral connected/i);
+
+  recorded = undefined;
+  const self = context({
+    recordReferral: async (...args) => {
+      recorded = args;
+      return true;
+    }
+  });
+  await handleBotUpdate(message("/start ref_42"), self.ctx);
+  assert.equal(recorded, undefined);
+});
+
+test("admin command returns KPI dashboard and actionable repair tickets", async () => {
+  const { ctx, calls } = context({
+    adminDashboard: async () => ({
+      orderCount: 7,
+      paidOrderCount: 4,
+      revenuePaise: 1200000,
+      paymentIssues: 1,
+      openRepairs: 3,
+      awaitingApproval: 1,
+      readyRepairs: 1,
+      lowStock: 2,
+      referralCount: 5,
+      positiveFeedback: 8,
+      negativeFeedback: 1,
+      recentRepairs: [{
+        reference_code: "MRR-ABCDEF1234",
+        customer_name: "Customer",
+        telegram_user_id: 42,
+        device_brand: "Samsung",
+        device_model: "A17 5G",
+        issue_or_condition: "Touch not working",
+        status: "diagnosing"
+      }]
+    })
+  });
+  await handleBotUpdate(message("/admin", { from: { id: 99, first_name: "Admin" } }), ctx);
+  assert.match(calls[0].body.text, /Mr Mobiles Admin/);
+  assert.match(calls[0].body.text, /Revenue/);
+  assert.equal(calls[0].body.reply_markup.inline_keyboard[0][0].callback_data, "admin_ticket:MRR-ABCDEF1234");
+});
+
+test("photo repair intake routes the Telegram photo file id with caption details", async () => {
+  let intake;
+  const { ctx, calls } = context({
+    repairIntake: async (userId, name, details, photoFileId) => {
+      intake = { userId, name, details, photoFileId };
+      return { referenceCode: "MRR-ABCDEF1234" };
+    }
+  });
+  await handleBotUpdate({
+    update_id: 130,
+    message: {
+      chat: { id: 42, type: "private" },
+      from: { id: 42, first_name: "Customer" },
+      caption: "Samsung A17 5G touch not working after fall",
+      photo: [{ file_id: "small" }, { file_id: "large-photo-id" }],
+      reply_to_message: { text: "🛠️ Repair Diagnosis\n\nReply with:" }
+    }
+  }, ctx);
+  assert.deepEqual(intake, {
+    userId: 42,
+    name: "Customer",
+    details: "Samsung A17 5G touch not working after fall",
+    photoFileId: "large-photo-id"
+  });
+  assert.match(calls[0].body.text, /Repair ticket created/);
+});
+
 test("privacy command warns against sensitive credentials", async () => {
   const { ctx, calls } = context();
   await handleBotUpdate(message("/privacy"), ctx);
@@ -442,7 +550,7 @@ test("repair command offers guided diagnosis and Mini App services", async () =>
   await handleBotUpdate(message("/repair"), ctx);
   const rows = calls[0].body.reply_markup.inline_keyboard;
   assert.equal(rows[0][0].callback_data, "repair_start");
-  assert.equal(rows[1][0].web_app.url, "https://mrmobiles.in/?v=2026-10-03.admin-repair-controls&category=service");
+  assert.equal(rows[1][0].web_app.url, "https://mrmobiles.in/?v=2026-10-03.fulfillment-sprint&category=service");
 });
 
 test("group updates never retrieve or publish customer orders", async () => {
