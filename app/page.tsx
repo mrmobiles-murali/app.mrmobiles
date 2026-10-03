@@ -75,6 +75,8 @@ export default function Home() {
   const [products, setProducts] = useState<StoreProduct[]>(catalog);
   const [category, setCategory] = useState<"all" | Product["category"]>("all");
   const [loading, setLoading] = useState(false);
+  const [customLoading, setCustomLoading] = useState(false);
+  const [customAmount, setCustomAmount] = useState("1");
   const [sessionReady, setSessionReady] = useState(false);
   const [paymentsEnabled, setPaymentsEnabled] = useState(false);
   const [repairs, setRepairs] = useState<RepairItem[]>([]);
@@ -468,6 +470,111 @@ export default function Home() {
     rzp.open();
   }
 
+  async function payCustomAmount() {
+    const tg = window.Telegram?.WebApp;
+    if (!tg) {
+      setMessage("Open this app from Telegram.");
+      return;
+    }
+    if (!sessionReady) {
+      setMessage("Secure Telegram session is not ready.");
+      return;
+    }
+    if (!paymentsEnabled) {
+      setMessage("Online payment is temporarily unavailable.");
+      return;
+    }
+    if (!window.Razorpay) {
+      setMessage("Razorpay Checkout is still loading.");
+      return;
+    }
+
+    const amountValue = Number(customAmount);
+    if (!Number.isFinite(amountValue) || amountValue < 1 || amountValue > 10000) {
+      setMessage("Enter a custom amount between ₹1 and ₹10,000.");
+      return;
+    }
+
+    try {
+      setCustomLoading(true);
+      setMessage("");
+
+      const orderResponse = await fetch("/api/razorpay/order", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-telegram-init-data": tg.initData
+        },
+        body: JSON.stringify({ customAmount: customAmount.trim() })
+      });
+
+      const order = await orderResponse.json();
+      if (!orderResponse.ok) throw new Error(order.error || "Could not create custom payment.");
+
+      const user = tg.initDataUnsafe?.user;
+      const rzp = new window.Razorpay({
+        key: order.keyId,
+        amount: order.amount,
+        currency: order.currency,
+        name: "Mr Mobiles",
+        description: "Custom / Test Payment",
+        order_id: order.orderId,
+        prefill: {
+          name: [user?.first_name, user?.last_name].filter(Boolean).join(" ")
+        },
+        notes: {
+          internal_order_id: order.internalOrderId,
+          payment_type: "custom_test"
+        },
+        theme: { color: "#14b8a6" },
+        handler: async (response: any) => {
+          const verifyResponse = await fetch("/api/razorpay/verify", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-telegram-init-data": tg.initData
+            },
+            body: JSON.stringify(response)
+          });
+
+          const verified = await verifyResponse.json();
+          if (!verifyResponse.ok) {
+            setMessage(verified.error || "Payment verification failed.");
+            tg.HapticFeedback?.notificationOccurred("error");
+            return;
+          }
+
+          setMessage(`Custom payment ${money(order.amount)} successful ✅ Order ${verified.internalOrderId}`);
+          tg.HapticFeedback?.notificationOccurred("success");
+          tg.showAlert(`Custom payment successful ✅\nAmount: ${money(order.amount)}`);
+        }
+      });
+
+      rzp.on("payment.failed", (response: any) => {
+        const reason = response?.error?.description || "Payment failed. Please try again.";
+        setMessage(reason);
+        tg.HapticFeedback?.notificationOccurred("error");
+        fetch("/api/razorpay/failure", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-telegram-init-data": tg.initData
+          },
+          body: JSON.stringify({
+            internalOrderId: order.internalOrderId,
+            reason
+          })
+        }).catch(() => undefined);
+      });
+
+      rzp.open();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Custom payment failed.");
+    } finally {
+      setCustomLoading(false);
+    }
+  }
+
   async function checkout() {
     window.Telegram?.WebApp.HapticFeedback?.impactOccurred("medium");
     if (!sessionReady) {
@@ -623,6 +730,56 @@ export default function Home() {
           );
         })}
       </section>
+
+      {paymentsEnabled && (
+        <section className="customPaymentPanel" aria-labelledby="custom-payment-title">
+          <div className="customPaymentHeading">
+            <div>
+              <span className="pill">Test payment</span>
+              <h2 id="custom-payment-title">Pay a custom amount</h2>
+              <p>Use ₹1 for a real end-to-end payment test without buying a product.</p>
+            </div>
+            <strong>₹</strong>
+          </div>
+
+          <div className="customPresets" aria-label="Quick custom amounts">
+            {["1", "10", "100"].map((amount) => (
+              <button
+                type="button"
+                key={amount}
+                className={customAmount === amount ? "active" : ""}
+                onClick={() => setCustomAmount(amount)}
+              >
+                ₹{amount}
+              </button>
+            ))}
+          </div>
+
+          <div className="customPaymentForm">
+            <label htmlFor="custom-amount">Amount in rupees</label>
+            <div>
+              <span>₹</span>
+              <input
+                id="custom-amount"
+                inputMode="decimal"
+                autoComplete="off"
+                value={customAmount}
+                onChange={(event) => setCustomAmount(event.target.value.replace(/[^0-9.]/g, "").slice(0, 8))}
+                placeholder="1"
+                aria-describedby="custom-payment-help"
+              />
+              <button
+                type="button"
+                disabled={customLoading || !sessionReady}
+                onClick={payCustomAmount}
+              >
+                {customLoading ? "Preparing…" : "Pay custom amount"}
+              </button>
+            </div>
+            <small id="custom-payment-help">Allowed: ₹1–₹10,000. Razorpay opens before any charge is made.</small>
+          </div>
+        </section>
+      )}
 
       <section className="checkoutBar">
         <div>

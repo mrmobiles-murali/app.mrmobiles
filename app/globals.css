@@ -315,6 +315,132 @@ button { font: inherit; }
   font-size: 1.2rem;
 }
 
+.customPaymentPanel {
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 20px;
+}
+
+.customPaymentHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.customPaymentHeading h2 {
+  margin: 7px 0 5px;
+  font-size: 1.1rem;
+}
+
+.customPaymentHeading p {
+  margin: 0;
+  color: var(--muted);
+  font-size: .82rem;
+  line-height: 1.45;
+}
+
+.customPaymentHeading > strong {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(20, 184, 166, .35);
+  background: rgba(20, 184, 166, .08);
+  color: var(--accent);
+  border-radius: 14px;
+  font-size: 1.2rem;
+}
+
+.customPresets {
+  margin: 14px 0 10px;
+  display: flex;
+  gap: 8px;
+}
+
+.customPresets button {
+  min-width: 64px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text);
+  border-radius: 12px;
+  font-weight: 800;
+}
+
+.customPresets button.active {
+  border-color: var(--accent);
+  background: rgba(20, 184, 166, .12);
+  color: var(--accent);
+}
+
+.customPaymentForm {
+  display: grid;
+  gap: 7px;
+}
+
+.customPaymentForm > label,
+.customPaymentForm small {
+  color: var(--muted);
+  font-size: .74rem;
+}
+
+.customPaymentForm > div {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) minmax(126px, auto);
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  border-radius: 14px;
+}
+
+.customPaymentForm > div > span {
+  text-align: center;
+  color: var(--accent);
+  font-weight: 900;
+}
+
+.customPaymentForm input {
+  width: 100%;
+  min-width: 0;
+  height: 48px;
+  padding: 0 8px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 1rem;
+}
+
+.customPaymentForm button {
+  min-height: 48px;
+  padding: 0 14px;
+  border: 0;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-weight: 900;
+}
+
+.customPaymentForm button:disabled {
+  opacity: .42;
+}
+
+@media (max-width: 480px) {
+  .customPaymentForm > div {
+    grid-template-columns: 34px minmax(0, 1fr);
+  }
+
+  .customPaymentForm button {
+    grid-column: 1 / -1;
+    border-top: 1px solid var(--line);
+  }
+}
+
 .checkoutBar {
   position: sticky;
   bottom: calc(10px + var(--tg-content-safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)));
