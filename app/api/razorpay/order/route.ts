@@ -4,6 +4,7 @@ import { createRazorpayOrder } from "@/lib/razorpay";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { validateTelegramInitData } from "@/lib/telegram-auth";
 import { parseCustomPaymentAmount } from "@/lib/custom-payment";
+import { createPaymentBridgeToken } from "@/lib/payment-bridge";
 
 export async function POST(request: NextRequest) {
   try {
@@ -118,6 +119,12 @@ export async function POST(request: NextRequest) {
 
     if (updateError) throw new Error(updateError.message);
 
+    const bridgeToken = createPaymentBridgeToken({
+      internalOrderId: orderRow.id,
+      razorpayOrderId: order.id,
+      telegramUserId: user.id
+    });
+
     return NextResponse.json({
       ok: true,
       keyId,
@@ -125,8 +132,10 @@ export async function POST(request: NextRequest) {
       amount: order.amount,
       currency: order.currency,
       internalOrderId: orderRow.id,
-      customPayment
-    });
+      customPayment,
+      bridgeUrl: process.env.PAYMENT_BRIDGE_URL || "https://mrmobiles.in/pay",
+      bridgeToken
+    });;
   } catch (error) {
     return NextResponse.json(
       { ok: false, error: error instanceof Error ? error.message : "Could not create payment." },
