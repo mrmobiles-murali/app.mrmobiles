@@ -103,11 +103,49 @@ export default function Home() {
         .catch(() => undefined);
     }
 
+    const applyTelegramTheme = () => {
+      const theme = tg.themeParams || {};
+      const isLight = tg.colorScheme === "light";
+      const root = document.documentElement;
+      const bg = theme.bg_color || (isLight ? "#f5f7fa" : "#0b0d10");
+      const panel = theme.secondary_bg_color || (isLight ? "#ffffff" : "#12161b");
+      const panel2 = theme.section_bg_color || panel;
+      const text = theme.text_color || (isLight ? "#111827" : "#f7f9fb");
+      const muted = theme.hint_color || (isLight ? "#667085" : "#98a2ad");
+      const line = theme.section_separator_color || (isLight ? "#dfe3e8" : "#252c34");
+      const accent = theme.button_color || "#14b8a6";
+      const accentText = theme.button_text_color || (isLight ? "#ffffff" : "#04100e");
+
+      root.style.colorScheme = tg.colorScheme;
+      root.style.setProperty("--bg", bg);
+      root.style.setProperty("--panel", panel);
+      root.style.setProperty("--panel-2", panel2);
+      root.style.setProperty("--text", text);
+      root.style.setProperty("--muted", muted);
+      root.style.setProperty("--line", line);
+      root.style.setProperty("--accent", accent);
+      root.style.setProperty("--accent-text", accentText);
+
+      tg.setHeaderColor(bg);
+      tg.setBackgroundColor(bg);
+      tg.setBottomBarColor?.(panel);
+    };
+
+    const applyTelegramViewport = () => {
+      if (typeof tg.viewportStableHeight === "number" && tg.viewportStableHeight > 0) {
+        document.documentElement.style.setProperty(
+          "--tg-viewport-stable-height",
+          `${tg.viewportStableHeight}px`
+        );
+      }
+    };
+
     tg.ready();
     tg.expand();
-    tg.setHeaderColor("#0b0d10");
-    tg.setBackgroundColor("#0b0d10");
-    tg.setBottomBarColor?.("#0b0d10");
+    applyTelegramTheme();
+    applyTelegramViewport();
+    tg.onEvent?.("themeChanged", applyTelegramTheme);
+    tg.onEvent?.("viewportChanged", applyTelegramViewport);
     tg.enableClosingConfirmation();
     try {
       tg.requestFullscreen?.();
@@ -151,6 +189,11 @@ export default function Home() {
         }
       })
       .catch((e) => setMessage(e.message));
+
+    return () => {
+      tg.offEvent?.("themeChanged", applyTelegramTheme);
+      tg.offEvent?.("viewportChanged", applyTelegramViewport);
+    };
   }, []);
 
   const filtered = useMemo(

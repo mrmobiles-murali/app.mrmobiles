@@ -8,6 +8,7 @@
   --line: #252c34;
   --accent: #14b8a6;
   --accent-2: #0f766e;
+  --accent-text: #04100e;
 }
 
 * { box-sizing: border-box; }
@@ -25,6 +26,7 @@ button { font: inherit; }
 .shell {
   width: min(100%, 760px);
   margin: 0 auto;
+  min-height: var(--tg-viewport-stable-height, 100dvh);
   padding:
     calc(18px + var(--tg-content-safe-area-inset-top, env(safe-area-inset-top, 0px)))
     calc(16px + var(--tg-content-safe-area-inset-right, env(safe-area-inset-right, 0px)))
@@ -93,7 +95,7 @@ button { font: inherit; }
 }
 
 .chip.active {
-  color: #04100e;
+  color: var(--accent-text);
   background: var(--accent);
   border-color: var(--accent);
   font-weight: 800;
@@ -251,7 +253,7 @@ button { font: inherit; }
 .add, .checkoutBar button {
   border: 0;
   background: var(--accent);
-  color: #04100e;
+  color: var(--accent-text);
   font-weight: 900;
 }
 

@@ -15,6 +15,19 @@ declare global {
           };
         };
         colorScheme: "light" | "dark";
+        themeParams?: {
+          bg_color?: string;
+          secondary_bg_color?: string;
+          text_color?: string;
+          hint_color?: string;
+          button_color?: string;
+          button_text_color?: string;
+          section_bg_color?: string;
+          section_separator_color?: string;
+        };
+        viewportStableHeight?: number;
+        onEvent?(eventType: "themeChanged" | "viewportChanged", callback: () => void): void;
+        offEvent?(eventType: "themeChanged" | "viewportChanged", callback: () => void): void;
         ready(): void;
         expand(): void;
         setHeaderColor(color: string): void;
