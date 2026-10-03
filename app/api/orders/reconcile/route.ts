@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { validateTelegramInitData } from "@/lib/telegram-auth";
-import { fetchRazorpayOrderPayments } from "@/lib/razorpay";
+import {
+  captureRazorpayPayment,
+  fetchRazorpayOrderPayments,
+  type RazorpayPayment
+} from "@/lib/razorpay";
 import { sendTelegramMessage } from "@/lib/telegram-bot";
 
 export async function POST(request: NextRequest) {
@@ -27,13 +31,44 @@ export async function POST(request: NextRequest) {
     for (const order of orders || []) {
       if (!order.razorpay_order_id) continue;
 
-      const payments = await fetchRazorpayOrderPayments(order.razorpay_order_id);
-      const captured = payments.find((payment) =>
-        (payment.status === "captured" || payment.captured === true) &&
+      const matchesOrder = (payment: RazorpayPayment) =>
         payment.order_id === order.razorpay_order_id &&
         Number(payment.amount) === Number(order.amount_paise) &&
-        String(payment.currency || "").toUpperCase() === String(order.currency || "INR").toUpperCase()
+        String(payment.currency || "").toUpperCase() === String(order.currency || "INR").toUpperCase();
+
+      let payments = await fetchRazorpayOrderPayments(order.razorpay_order_id);
+      let captured = payments.find((payment) =>
+        matchesOrder(payment) &&
+        (payment.status === "captured" || payment.captured === true)
       );
+
+      if (!captured) {
+        const authorized = payments.find((payment) =>
+          matchesOrder(payment) && payment.status === "authorized"
+        );
+
+        if (authorized) {
+          try {
+            const captureResult = await captureRazorpayPayment({
+              paymentId: authorized.id,
+              amountPaise: Number(order.amount_paise),
+              currency: String(order.currency || "INR")
+            });
+            if (
+              matchesOrder(captureResult) &&
+              (captureResult.status === "captured" || captureResult.captured === true)
+            ) {
+              captured = captureResult;
+            }
+          } catch {
+            payments = await fetchRazorpayOrderPayments(order.razorpay_order_id);
+            captured = payments.find((payment) =>
+              matchesOrder(payment) &&
+              (payment.status === "captured" || payment.captured === true)
+            );
+          }
+        }
+      }
 
       if (!captured) continue;
 
