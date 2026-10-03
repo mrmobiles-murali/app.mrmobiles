@@ -3,6 +3,7 @@ import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { verifyWebhookSignature } from "@/lib/razorpay";
 import { sendTelegramMessage } from "@/lib/telegram-bot";
 import { addWorkflowEvent } from "@/lib/web-automation";
+import { advanceRepairAfterPaidOrder } from "@/lib/repair-payment-server";
 
 export async function POST(request: NextRequest) {
   try {
@@ -28,7 +29,7 @@ export async function POST(request: NextRequest) {
     const supabase = getSupabaseAdmin();
     const { data: order } = await supabase
       .from("orders")
-      .select("id, telegram_user_id, source, tracking_code, status, razorpay_payment_id")
+      .select("id, telegram_user_id, source, tracking_code, status, razorpay_payment_id, amount_paise, cart")
       .eq("razorpay_order_id", razorpayOrderId)
       .maybeSingle();
 
@@ -38,7 +39,7 @@ export async function POST(request: NextRequest) {
 
     if (event === "order.paid" || event === "payment.captured") {
       if (order.status !== "paid") {
-        const { error: updateError } = await supabase
+        const { data: transitioned, error: updateError } = await supabase
           .from("orders")
           .update({
             status: "paid",
@@ -48,11 +49,13 @@ export async function POST(request: NextRequest) {
             updated_at: new Date().toISOString()
           })
           .eq("id", order.id)
-          .neq("status", "paid");
+          .neq("status", "paid")
+          .select("id")
+          .maybeSingle();
 
         if (updateError) throw new Error(updateError.message);
 
-        if (order.source === "web" && order.tracking_code) {
+        if (transitioned && order.source === "web" && order.tracking_code) {
           await addWorkflowEvent({
             entityType: "order",
             entityId: order.id,
@@ -62,10 +65,32 @@ export async function POST(request: NextRequest) {
           });
         }
 
-        if (order.telegram_user_id) {
+        if (transitioned && order.telegram_user_id) {
+          const repair = await advanceRepairAfterPaidOrder({
+            telegramUserId: Number(order.telegram_user_id),
+            amountPaise: Number(order.amount_paise || 0),
+            cart: order.cart
+          });
           await sendTelegramMessage(
             Number(order.telegram_user_id),
-            `✅ <b>Payment received</b>\nOrder: <code>${order.id}</code>${paymentId ? `\nPayment: <code>${paymentId}</code>` : ""}\nStatus: confirmed\n\nUse /orders anytime to check your order. Thank you for choosing Mr Mobiles.`
+            [
+              "✅ <b>Payment received</b>",
+              repair?.referenceCode ? `Repair: <code>${repair.referenceCode}</code>` : "",
+              `Order: <code>${order.id}</code>`,
+              paymentId ? `Payment: <code>${paymentId}</code>` : "",
+              "Status: <b>confirmed</b>",
+              repair?.referenceCode ? "Repair status: <b>In progress</b>" : "",
+              "",
+              "Use /orders anytime to check your order. Thank you for choosing Mr Mobiles."
+            ].filter(Boolean).join("\n"),
+            repair?.referenceCode ? {
+              replyMarkup: {
+                inline_keyboard: [
+                  [{ text: "📍 Track Repair", callback_data: `repair_status:${repair.referenceCode}` }],
+                  [{ text: "👤 My Account", callback_data: "account_summary" }]
+                ]
+              }
+            } : undefined
           );
         }
       }
