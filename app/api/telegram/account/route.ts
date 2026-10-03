@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
         .select("id,amount_paise,status,workflow_status,tracking_code,created_at,paid_at")
         .eq("telegram_user_id", user.id)
         .order("created_at", { ascending: false })
-        .limit(10),
+        .limit(500),
       listTelegramRepairTickets(user.id, 20)
     ]);
 
@@ -86,7 +86,7 @@ export async function POST(request: NextRequest) {
         activeRepairs: tickets.filter(ticket => activeStatuses.has(ticket.status)).length,
         savedDevices: savedDevices.length
       },
-      orders: (orders || []).map(order => ({
+      orders: (orders || []).slice(0, 10).map(order => ({
         ...order,
         receipt_code: receiptCode(order.id, order.created_at)
       })),
