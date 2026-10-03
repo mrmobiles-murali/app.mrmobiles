@@ -743,9 +743,31 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
         approved ? "Repair quote approved." : "This quote cannot be approved right now."
       );
       if (approved) {
+        const ticket = context.repairStatus
+          ? await context.repairStatus(userId, referenceCode)
+          : null;
+        const payUrl = new URL(versionedMiniAppUrl(context.appUrl));
+        payUrl.searchParams.set("repair_ref", referenceCode);
+
         await context.call("sendMessage", {
           chat_id: chatId,
-          text: `✅ Repair quote approved\nReference: ${referenceCode}\n\nMr Mobiles can now continue the repair workflow.`
+          text: [
+            "✅ Repair quote approved",
+            `Reference: ${referenceCode}`,
+            typeof ticket?.quoted_amount_paise === "number"
+              ? `Approved amount: ${formatInr(ticket.quoted_amount_paise)}`
+              : "",
+            "",
+            "Pay the approved quote securely on mrmobiles.in. The amount is locked to this repair reference on the server.",
+            "After confirmed payment, your repair automatically moves to in progress."
+          ].filter(Boolean).join("\n"),
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "💳 Pay Repair Quote", web_app: { url: payUrl.toString() } }],
+              [{ text: "📍 Track Repair", callback_data: `repair_status:${referenceCode}` }],
+              [{ text: "👤 Talk to Human", callback_data: "human_support" }]
+            ]
+          }
         });
       }
       return;
