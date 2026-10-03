@@ -26,29 +26,22 @@ function settings(request: NextRequest) {
 
 function repairAdminKeyboard(referenceCode: string, userId?: number) {
   const rows: Array<Array<Record<string, string>>> = [
-    [
-      { text: "🔎 Diagnosing", callback_data: `repair_admin:${referenceCode}:diagnosing` },
-      { text: "💰 Send Quote", callback_data: `repair_quote_prompt:${referenceCode}` }
-    ],
-    [
-      { text: "🔧 Repairing", callback_data: `repair_admin:${referenceCode}:repairing` },
-      { text: "📦 Ready", callback_data: `repair_admin:${referenceCode}:ready` }
-    ],
-    [
-      { text: "✅ Completed", callback_data: `repair_admin:${referenceCode}:completed` }
-    ],
-    [
-      { text: "👨‍🔧 Assign", callback_data: `repair_assign_prompt:${referenceCode}` },
-      { text: "⏱ SLA", callback_data: `repair_sla_prompt:${referenceCode}` }
-    ]
+    [{ text: "🛠 Open Repair Ticket", callback_data: `admin_ticket:${referenceCode}` }]
   ];
 
   if (Number.isSafeInteger(userId) && Number(userId) > 0) {
     rows.push([
-      { text: "⚡ Default Reply", callback_data: `reply_default:${userId}` },
-      { text: "✍️ Custom Reply", callback_data: `reply_customer:${userId}` }
+      {
+        text: "⚡ Default Reply",
+        callback_data: `reply_default:${referenceCode}:${userId}`
+      },
+      {
+        text: "✍️ Custom Reply",
+        callback_data: `reply_customer:${referenceCode}:${userId}`
+      }
     ]);
   }
+
   return { inline_keyboard: rows };
 }
 
@@ -108,6 +101,9 @@ function status(request: NextRequest) {
     paymentLifecycleNotifications: true,
     profileSelfHeal: true,
     adminRepairControls: true,
+    adminStateGuard: true,
+    contextualAdminReplies: true,
+    quickWarrantyActions: true,
     repairLifecycleNotifications: true,
     accountSummary: true,
     loyaltyPoints: true,
