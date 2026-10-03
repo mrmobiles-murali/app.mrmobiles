@@ -7,6 +7,7 @@ import {
   type RazorpayPayment
 } from "@/lib/razorpay";
 import { sendTelegramMessage } from "@/lib/telegram-bot";
+import { advanceRepairAfterPaidOrder } from "@/lib/repair-payment-server";
 
 export async function POST(request: NextRequest) {
   try {
@@ -16,7 +17,7 @@ export async function POST(request: NextRequest) {
 
     const { data: orders, error } = await supabase
       .from("orders")
-      .select("id, telegram_user_id, amount_paise, currency, razorpay_order_id, status")
+      .select("id, telegram_user_id, amount_paise, currency, razorpay_order_id, status, cart")
       .eq("telegram_user_id", user.id)
       .neq("status", "paid")
       .not("razorpay_order_id", "is", null)
@@ -92,9 +93,31 @@ export async function POST(request: NextRequest) {
       if (updated) {
         reconciled += 1;
         paidOrderIds.push(order.id);
+        const repair = await advanceRepairAfterPaidOrder({
+          telegramUserId: user.id,
+          amountPaise: Number(order.amount_paise),
+          cart: order.cart
+        });
         await sendTelegramMessage(
           user.id,
-          `✅ <b>Payment confirmed</b>\nOrder: <code>${order.id}</code>\nPayment: <code>${captured.id}</code>\n\nThank you for choosing Mr Mobiles.`
+          [
+            "✅ <b>Payment confirmed</b>",
+            `Amount: <b>${new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(Number(order.amount_paise) / 100)}</b>`,
+            repair?.referenceCode ? `Repair: <code>${repair.referenceCode}</code>` : "",
+            `Order: <code>${order.id}</code>`,
+            `Payment: <code>${captured.id}</code>`,
+            repair?.referenceCode ? "Repair status: <b>In progress</b>" : "",
+            "",
+            "Thank you for choosing Mr Mobiles."
+          ].filter(Boolean).join("\n"),
+          repair?.referenceCode ? {
+            replyMarkup: {
+              inline_keyboard: [
+                [{ text: "📍 Track Repair", callback_data: `repair_status:${repair.referenceCode}` }],
+                [{ text: "👤 My Account", callback_data: "account_summary" }]
+              ]
+            }
+          } : undefined
         );
       }
     }
