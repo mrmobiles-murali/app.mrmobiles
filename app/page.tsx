@@ -42,11 +42,23 @@ type AccountSummary = {
   repairCount: number;
   activeRepairs: number;
   savedDevices: number;
+  activeWarranties: number;
+};
+
+type ServiceWarranty = {
+  warranty_code: string;
+  repair_reference: string;
+  device_label: string;
+  start_at: string;
+  end_at: string;
+  status: string;
+  note?: string | null;
 };
 
 type AccountData = {
   summary: AccountSummary;
   orders: AccountOrder[];
+  warranties: ServiceWarranty[];
 };
 
 function money(paise: number) {
@@ -198,7 +210,11 @@ export default function Home() {
           .then((accountData) => {
             setRepairs(Array.isArray(accountData?.repairs) ? accountData.repairs : []);
             if (accountData?.summary && Array.isArray(accountData?.orders)) {
-              setAccount({ summary: accountData.summary, orders: accountData.orders });
+              setAccount({
+                summary: accountData.summary,
+                orders: accountData.orders,
+                warranties: Array.isArray(accountData?.warranties) ? accountData.warranties : []
+              });
             }
           })
           .catch(() => undefined);
@@ -498,6 +514,7 @@ export default function Home() {
                     <div><strong>{account.summary.loyaltyPoints}</strong><span>MR Points</span></div>
                     <div><strong>{money(account.summary.paidSpendPaise)}</strong><span>Paid spend</span></div>
                     <div><strong>{account.summary.activeRepairs}</strong><span>Active repairs</span></div>
+                    <div><strong>{account.summary.activeWarranties}</strong><span>Warranties</span></div>
                   </div>
                   <p className="accountNote">MR Points earn at 1 point per ₹100 of verified paid orders.</p>
                   <h3>Recent orders & receipts</h3>
@@ -508,6 +525,15 @@ export default function Home() {
                       <em>{order.tracking_code || "Order receipt"}</em>
                     </div>
                   )) : <p>No Telegram orders yet.</p>}
+                  <h3>Service warranties</h3>
+                  {account.warranties.length ? account.warranties.map((warranty) => (
+                    <div className="repairItem" key={warranty.warranty_code}>
+                      <strong>🛡 {warranty.device_label}</strong>
+                      <span>{warranty.warranty_code} · Repair {warranty.repair_reference}</span>
+                      <em>Valid until {new Date(warranty.end_at).toLocaleDateString("en-IN")}</em>
+                      {warranty.note ? <span>{warranty.note}</span> : null}
+                    </div>
+                  )) : <p>No active service warranties.</p>}
                 </>
               )}
               <h3>Repair history</h3>
@@ -524,7 +550,7 @@ export default function Home() {
               </div>
               {sessionReady && (
                 <p className="accountNote">
-                  Warranty terms depend on the specific product/service and are confirmed on the official bill or service document.
+                  Service warranty dates shown above are issued by Mr Mobiles after a completed repair. Product warranty terms remain governed by the official bill/manufacturer terms.
                 </p>
               )}
             </div>

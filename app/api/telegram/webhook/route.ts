@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { answerBusinessQuestion, aiRuntimeConfigured } from "@/lib/business-ai";
+import { analyzeRepairPhoto, answerBusinessQuestion, aiRuntimeConfigured } from "@/lib/business-ai";
 import { getInventoryProductsByIds, searchInventoryProducts } from "@/lib/server-catalog";
 import { approveRepairQuote, createTelegramRepairTicket, getTelegramRepairTicket, listTelegramRepairTickets, REPAIR_STATUSES, updateRepairTicket } from "@/lib/repair-tickets";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
@@ -36,6 +36,10 @@ function repairAdminKeyboard(referenceCode: string, userId?: number) {
     ],
     [
       { text: "✅ Completed", callback_data: `repair_admin:${referenceCode}:completed` }
+    ],
+    [
+      { text: "👨‍🔧 Assign", callback_data: `repair_assign_prompt:${referenceCode}` },
+      { text: "⏱ SLA", callback_data: `repair_sla_prompt:${referenceCode}` }
     ]
   ];
 
@@ -111,6 +115,10 @@ function status(request: NextRequest) {
     adminDashboard: true,
     photoRepairIntake: true,
     telegramBusinessUpdatesReady: true,
+    aiVisualRepairTriage: true,
+    technicianAssignment: true,
+    repairSlaTracking: true,
+    serviceWarranties: true,
     inventorySource: "supabase",
     miniAppUrl: config.appUrl, commands: BOT_COMMANDS
   };
@@ -281,6 +289,31 @@ export async function POST(request: NextRequest) {
             details
           });
 
+          let aiTriage: string | undefined;
+          if (photoFileId && aiRuntimeConfigured()) {
+            try {
+              const file = await callTelegram("getFile", { file_id: photoFileId }) as any;
+              const filePath = typeof file?.file_path === "string" ? file.file_path : "";
+              const fileSize = Number(file?.file_size || 0);
+              if (filePath && (!fileSize || fileSize <= 8 * 1024 * 1024)) {
+                const photoResponse = await fetch(`https://api.telegram.org/file/bot${token}/${filePath}`, {
+                  cache: "no-store",
+                  signal: AbortSignal.timeout(12000)
+                });
+                const contentType = photoResponse.headers.get("content-type") || "image/jpeg";
+                if (photoResponse.ok && contentType.startsWith("image/")) {
+                  const buffer = Buffer.from(await photoResponse.arrayBuffer());
+                  if (buffer.byteLength <= 8 * 1024 * 1024) {
+                    const dataUrl = `data:${contentType};base64,${buffer.toString("base64")}`;
+                    aiTriage = (await analyzeRepairPhoto(details, dataUrl)) || undefined;
+                  }
+                }
+              }
+            } catch {
+              // Photo triage is optional. The repair ticket and technician review must still continue.
+            }
+          }
+
           if (config.supportChatId && config.admins.length) {
             try {
               const adminText = [
@@ -290,14 +323,15 @@ export async function POST(request: NextRequest) {
                 `Customer ID: ${userId}`,
                 `Device: ${[ticket.device_brand, ticket.device_model].filter(Boolean).join(" ")}`,
                 `Issue: ${ticket.issue_or_condition}`,
+                aiTriage ? `AI visual pre-check: ${aiTriage}` : "",
                 "",
                 "Tap an action below — customer ID and repair reference are already linked."
-              ].join("\n");
+              ].filter(Boolean).join("\n");
               if (photoFileId) {
                 await callTelegram("sendPhoto", {
                   chat_id: config.supportChatId,
                   photo: photoFileId,
-                  caption: adminText,
+                  caption: adminText.slice(0, 1024),
                   reply_markup: repairAdminKeyboard(ticket.reference_code, userId)
                 });
               } else {
@@ -312,7 +346,7 @@ export async function POST(request: NextRequest) {
             }
           }
 
-          return { referenceCode: ticket.reference_code };
+          return { referenceCode: ticket.reference_code, ...(aiTriage ? { aiTriage } : {}) };
         } catch {
           return null;
         }
@@ -410,7 +444,11 @@ export async function POST(request: NextRequest) {
       },
       async accountSummary(userId) {
         const supabase = getSupabaseAdmin();
-        const [{ data: orders, error: orderError }, { data: repairs, error: repairError }] = await Promise.all([
+        const [
+          { data: orders, error: orderError },
+          { data: repairs, error: repairError },
+          { data: warranties, error: warrantyError }
+        ] = await Promise.all([
           supabase.from("orders")
             .select("amount_paise,status")
             .eq("telegram_user_id", userId)
@@ -420,9 +458,15 @@ export async function POST(request: NextRequest) {
             .eq("request_type", "repair")
             .eq("source", "telegram")
             .eq("telegram_user_id", userId)
+            .limit(500),
+          supabase.from("customer_warranties")
+            .select("id")
+            .eq("telegram_user_id", userId)
+            .eq("status", "active")
+            .gte("end_at", new Date().toISOString())
             .limit(500)
         ]);
-        if (orderError || repairError) throw new Error("Account summary lookup failed.");
+        if (orderError || repairError || warrantyError) throw new Error("Account summary lookup failed.");
         const paid = (orders || []).filter(order => order.status === "paid");
         const paidSpendPaise = paid.reduce((sum, order) => sum + Number(order.amount_paise || 0), 0);
         const activeStatuses = new Set(["received","reviewing","diagnosing","awaiting_approval","approved","repairing","ready"]);
@@ -436,7 +480,8 @@ export async function POST(request: NextRequest) {
           loyaltyPoints: Math.floor(paidSpendPaise / 10000),
           repairCount: (repairs || []).length,
           activeRepairs: (repairs || []).filter(ticket => activeStatuses.has(ticket.status)).length,
-          savedDevices: devices.size
+          savedDevices: devices.size,
+          activeWarranties: (warranties || []).length
         };
       },
       async recordReferral(referredUserId, referrerUserId, source = "bot_start") {
@@ -454,7 +499,7 @@ export async function POST(request: NextRequest) {
         const [ordersResult, repairsResult, productsResult, referralsResult, feedbackResult] = await Promise.all([
           supabase.from("orders").select("amount_paise,status,workflow_status").limit(1000),
           supabase.from("service_requests")
-            .select("reference_code,customer_name,telegram_user_id,device_brand,device_model,issue_or_condition,status,quoted_amount_paise,status_note,created_at,updated_at")
+            .select("reference_code,customer_name,telegram_user_id,device_brand,device_model,issue_or_condition,status,quoted_amount_paise,status_note,technician_name,sla_due_at,created_at,updated_at")
             .eq("request_type", "repair")
             .order("created_at", { ascending: false })
             .limit(200),
@@ -481,17 +526,89 @@ export async function POST(request: NextRequest) {
           referralCount: (referralsResult.data || []).length,
           positiveFeedback: (feedbackResult.data || []).filter(item => item.rating === 1).length,
           negativeFeedback: (feedbackResult.data || []).filter(item => item.rating === -1).length,
+          overdueSla: repairs.filter(ticket =>
+            openStatuses.has(ticket.status) &&
+            ticket.sla_due_at &&
+            new Date(ticket.sla_due_at).getTime() < Date.now()
+          ).length,
           recentRepairs: repairs.filter(ticket => openStatuses.has(ticket.status)).slice(0, 5)
         };
       },
       async adminRepairTicket(referenceCode) {
         const { data, error } = await getSupabaseAdmin().from("service_requests")
-          .select("reference_code,customer_name,telegram_user_id,device_brand,device_model,issue_or_condition,status,quoted_amount_paise,status_note,created_at,updated_at")
+          .select("reference_code,customer_name,telegram_user_id,device_brand,device_model,issue_or_condition,status,quoted_amount_paise,status_note,technician_name,sla_due_at,created_at,updated_at")
           .eq("request_type", "repair")
           .eq("reference_code", referenceCode)
           .maybeSingle();
         if (error) throw new Error("Admin repair lookup failed.");
         return data || null;
+      },
+      async repairAssign(referenceCode, technicianName) {
+        const { data, error } = await getSupabaseAdmin().from("service_requests")
+          .update({
+            technician_name: technicianName.trim().slice(0, 80),
+            updated_at: new Date().toISOString()
+          })
+          .eq("request_type", "repair")
+          .eq("reference_code", referenceCode)
+          .select("reference_code")
+          .maybeSingle();
+        return !error && Boolean(data);
+      },
+      async repairSetSla(referenceCode, hours) {
+        const due = new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
+        const { data, error } = await getSupabaseAdmin().from("service_requests")
+          .update({ sla_due_at: due, updated_at: new Date().toISOString() })
+          .eq("request_type", "repair")
+          .eq("reference_code", referenceCode)
+          .select("reference_code")
+          .maybeSingle();
+        return !error && Boolean(data);
+      },
+      async createWarranty(referenceCode, days, note) {
+        const supabase = getSupabaseAdmin();
+        const { data: ticket, error: ticketError } = await supabase.from("service_requests")
+          .select("reference_code,telegram_user_id,device_brand,device_model,status")
+          .eq("request_type", "repair")
+          .eq("reference_code", referenceCode)
+          .maybeSingle();
+        if (ticketError || !ticket || ticket.status !== "completed" || !ticket.telegram_user_id) return false;
+
+        const startAt = new Date();
+        const endAt = new Date(startAt.getTime() + days * 24 * 60 * 60 * 1000);
+        const warrantyCode = `MRW-${referenceCode.replace(/^MRR-/, "")}`;
+        const deviceLabel = [ticket.device_brand, ticket.device_model].filter(Boolean).join(" ") || "Repaired device";
+        const { error } = await supabase.from("customer_warranties").upsert({
+          warranty_code: warrantyCode,
+          repair_reference: referenceCode,
+          telegram_user_id: Number(ticket.telegram_user_id),
+          device_label: deviceLabel,
+          start_at: startAt.toISOString(),
+          end_at: endAt.toISOString(),
+          status: "active",
+          note: note.trim().slice(0, 500) || null,
+          updated_at: new Date().toISOString()
+        }, { onConflict: "repair_reference" });
+        if (error) return false;
+
+        try {
+          await callTelegram("sendMessage", {
+            chat_id: Number(ticket.telegram_user_id),
+            text: [
+              "🛡 Mr Mobiles service warranty",
+              `Warranty: ${warrantyCode}`,
+              `Repair: ${referenceCode}`,
+              `Device: ${deviceLabel}`,
+              `Valid until: ${endAt.toLocaleDateString("en-IN")}`,
+              note ? `Terms: ${note.trim().slice(0, 500)}` : "",
+              "",
+              "Keep this message with your service record. Warranty scope follows the terms confirmed by Mr Mobiles."
+            ].filter(Boolean).join("\n")
+          });
+        } catch {
+          // Warranty record is authoritative even if Telegram delivery is temporarily unavailable.
+        }
+        return true;
       },
       async orders(userId) {
         const { data, error } = await getSupabaseAdmin().from("orders")

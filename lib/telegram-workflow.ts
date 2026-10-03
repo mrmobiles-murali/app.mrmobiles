@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 
-export const BOT_WORKFLOW_VERSION = "2026-10-03.fulfillment-sprint";
+export const BOT_WORKFLOW_VERSION = "2026-10-03.ops-final";
 export const REPAIR_RUSH_SHORT_NAME = "repairrush";
 export const REPAIR_RUSH_BOT_USERNAME = "MrMobileDoctor_bot";
 export const DEFAULT_REPAIR_REPLY = [
@@ -94,6 +94,8 @@ export type RepairTicketSummary = {
   status_note?: string | null;
   created_at?: string;
   updated_at?: string;
+  technician_name?: string | null;
+  sla_due_at?: string | null;
 };
 
 export type AccountSummary = {
@@ -104,6 +106,7 @@ export type AccountSummary = {
   repairCount: number;
   activeRepairs: number;
   savedDevices: number;
+  activeWarranties: number;
 };
 
 export type AdminRepairTicket = RepairTicketSummary & {
@@ -123,6 +126,7 @@ export type AdminDashboardSummary = {
   referralCount: number;
   positiveFeedback: number;
   negativeFeedback: number;
+  overdueSla: number;
   recentRepairs: AdminRepairTicket[];
 };
 
@@ -164,7 +168,10 @@ export type BotContext = {
     onDraft?: (partial: string) => Promise<void>
   ) => Promise<AiAssistantReply>;
   handoff?: (userId: number, name: string) => Promise<boolean>;
-  repairIntake?: (userId: number, name: string, details: string, photoFileId?: string) => Promise<{ referenceCode: string } | null>;
+  repairIntake?: (userId: number, name: string, details: string, photoFileId?: string) => Promise<{ referenceCode: string; aiTriage?: string } | null>;
+  repairAssign?: (referenceCode: string, technicianName: string) => Promise<boolean>;
+  repairSetSla?: (referenceCode: string, hours: number) => Promise<boolean>;
+  createWarranty?: (referenceCode: string, days: number, note: string) => Promise<boolean>;
   accountSummary?: (userId: number) => Promise<AccountSummary>;
   recordReferral?: (referredUserId: number, referrerUserId: number, source?: "bot_start" | "mini_app") => Promise<boolean>;
   adminDashboard?: () => Promise<AdminDashboardSummary>;
@@ -274,7 +281,8 @@ function accountSummaryText(summary: AccountSummary): string {
     `Paid spend: ${formatInr(summary.paidSpendPaise)}`,
     `MR Points: ${summary.loyaltyPoints} (1 point / ₹100 paid)`,
     `Repairs: ${summary.repairCount} • Active: ${summary.activeRepairs}`,
-    `Saved devices: ${summary.savedDevices}`
+    `Saved devices: ${summary.savedDevices}`,
+    `Active warranties: ${summary.activeWarranties}`
   ].join("\n");
 }
 
@@ -291,6 +299,7 @@ function adminDashboardText(summary: AdminDashboardSummary): string {
     `Ready: ${summary.readyRepairs}`,
     `Low stock: ${summary.lowStock}`,
     `Referrals: ${summary.referralCount}`,
+    `SLA overdue: ${summary.overdueSla}`,
     `AI feedback: 👍 ${summary.positiveFeedback} • 👎 ${summary.negativeFeedback}`
   ].join("\n");
 }
@@ -305,8 +314,15 @@ function adminTicketKeyboard(ticket: AdminRepairTicket) {
       { text: "🔧 Repairing", callback_data: `repair_admin:${ticket.reference_code}:repairing` },
       { text: "📦 Ready", callback_data: `repair_admin:${ticket.reference_code}:ready` }
     ],
-    [{ text: "✅ Completed", callback_data: `repair_admin:${ticket.reference_code}:completed` }]
+    [{ text: "✅ Completed", callback_data: `repair_admin:${ticket.reference_code}:completed` }],
+    [
+      { text: "👨‍🔧 Assign", callback_data: `repair_assign_prompt:${ticket.reference_code}` },
+      { text: "⏱ SLA", callback_data: `repair_sla_prompt:${ticket.reference_code}` }
+    ]
   ];
+  if (ticket.status === "completed") {
+    rows.push([{ text: "🛡 Warranty", callback_data: `warranty_prompt:${ticket.reference_code}` }]);
+  }
   const customerId = Number(ticket.telegram_user_id);
   if (Number.isSafeInteger(customerId) && customerId > 0) {
     rows.push([
@@ -326,6 +342,8 @@ function adminRepairText(ticket: AdminRepairTicket): string {
     `Issue: ${ticket.issue_or_condition}`,
     `Status: ${ticket.status}`,
     typeof ticket.quoted_amount_paise === "number" ? `Quote: ${formatInr(ticket.quoted_amount_paise)}` : "",
+    ticket.technician_name ? `Technician: ${ticket.technician_name}` : "",
+    ticket.sla_due_at ? `SLA due: ${new Date(ticket.sla_due_at).toLocaleString("en-IN")}` : "",
     ticket.status_note ? `Note: ${ticket.status_note}` : ""
   ].filter(Boolean).join("\n");
 }
@@ -403,8 +421,11 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
       /^repair_admin:(MRR-[A-F0-9]{10}):(diagnosing|repairing|ready|completed)$/i
     );
     const quotePromptMatch = callbackData.match(/^repair_quote_prompt:(MRR-[A-F0-9]{10})$/i);
+    const assignPromptMatch = callbackData.match(/^repair_assign_prompt:(MRR-[A-F0-9]{10})$/i);
+    const slaPromptMatch = callbackData.match(/^repair_sla_prompt:(MRR-[A-F0-9]{10})$/i);
+    const warrantyPromptMatch = callbackData.match(/^warranty_prompt:(MRR-[A-F0-9]{10})$/i);
 
-    if (repairActionMatch || quotePromptMatch) {
+    if (repairActionMatch || quotePromptMatch || assignPromptMatch || slaPromptMatch || warrantyPromptMatch) {
       if (!context.admins.includes(adminId)) {
         await safeAnswerCallback(context, callbackQuery.id, "This action is for the Mr Mobiles support team.");
         return;
@@ -434,6 +455,39 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
         text: ok
           ? `✅ ${referenceCode} updated to ${status}. Customer notification sent.`
           : `⚠️ Could not update ${referenceCode}. Check the ticket and try again.`
+      });
+      return;
+    }
+
+    if (assignPromptMatch) {
+      const referenceCode = assignPromptMatch[1].toUpperCase();
+      await safeAnswerCallback(context, callbackQuery.id, "Repair reference added automatically.");
+      await context.call("sendMessage", {
+        chat_id: callbackChatId,
+        text: ["👨‍🔧 MR MOBILES technician", `Reference: ${referenceCode}`, "", "Reply with technician name."].join("\n"),
+        reply_markup: { force_reply: true, selective: true, input_field_placeholder: "Technician name" }
+      });
+      return;
+    }
+
+    if (slaPromptMatch) {
+      const referenceCode = slaPromptMatch[1].toUpperCase();
+      await safeAnswerCallback(context, callbackQuery.id, "Repair reference added automatically.");
+      await context.call("sendMessage", {
+        chat_id: callbackChatId,
+        text: ["⏱ MR MOBILES SLA", `Reference: ${referenceCode}`, "", "Reply with SLA hours (1-720).", "Example: 24"].join("\n"),
+        reply_markup: { force_reply: true, selective: true, input_field_placeholder: "SLA hours" }
+      });
+      return;
+    }
+
+    if (warrantyPromptMatch) {
+      const referenceCode = warrantyPromptMatch[1].toUpperCase();
+      await safeAnswerCallback(context, callbackQuery.id, "Warranty reference added automatically.");
+      await context.call("sendMessage", {
+        chat_id: callbackChatId,
+        text: ["🛡 MR MOBILES warranty", `Reference: ${referenceCode}`, "", "Reply with: DAYS optional note", "Example: 90 Display replacement service warranty"].join("\n"),
+        reply_markup: { force_reply: true, selective: true, input_field_placeholder: "Warranty days + optional note" }
       });
       return;
     }
@@ -832,7 +886,50 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
       : "";
     const targetMatch = replyPrompt.match(/^↩️ MR MOBILES reply\nCustomer ID: (\d+)\n/);
     const quoteTargetMatch = replyPrompt.match(/^💰 MR MOBILES quote\nReference: (MRR-[A-F0-9]{10})\n/i);
+    const assignTargetMatch = replyPrompt.match(/^👨‍🔧 MR MOBILES technician\nReference: (MRR-[A-F0-9]{10})\n/i);
+    const slaTargetMatch = replyPrompt.match(/^⏱ MR MOBILES SLA\nReference: (MRR-[A-F0-9]{10})\n/i);
+    const warrantyTargetMatch = replyPrompt.match(/^🛡 MR MOBILES warranty\nReference: (MRR-[A-F0-9]{10})\n/i);
     const adminReply = typeof message.text === "string" ? message.text.trim() : "";
+
+    if (assignTargetMatch && context.admins.includes(senderId) && adminReply && !adminReply.startsWith("/")) {
+      const referenceCode = assignTargetMatch[1].toUpperCase();
+      const technicianName = adminReply.replace(/\s+/g, " ").slice(0, 80);
+      const ok = technicianName.length >= 2 && context.repairAssign
+        ? await context.repairAssign(referenceCode, technicianName)
+        : false;
+      await context.call("sendMessage", {
+        chat_id: message.chat.id,
+        text: ok ? `✅ ${referenceCode} assigned to ${technicianName}.` : "⚠️ Technician assignment failed."
+      });
+      return;
+    }
+
+    if (slaTargetMatch && context.admins.includes(senderId) && adminReply && !adminReply.startsWith("/")) {
+      const referenceCode = slaTargetMatch[1].toUpperCase();
+      const hours = Number(adminReply);
+      const ok = Number.isInteger(hours) && hours >= 1 && hours <= 720 && context.repairSetSla
+        ? await context.repairSetSla(referenceCode, hours)
+        : false;
+      await context.call("sendMessage", {
+        chat_id: message.chat.id,
+        text: ok ? `✅ SLA set for ${referenceCode}: ${hours} hours.` : "⚠️ SLA must be a whole number from 1 to 720 hours."
+      });
+      return;
+    }
+
+    if (warrantyTargetMatch && context.admins.includes(senderId) && adminReply && !adminReply.startsWith("/")) {
+      const referenceCode = warrantyTargetMatch[1].toUpperCase();
+      const match = adminReply.match(/^(\d{1,3})(?:\s+([\s\S]+))?$/);
+      const days = Number(match?.[1]);
+      const ok = match && Number.isInteger(days) && days >= 1 && days <= 730 && context.createWarranty
+        ? await context.createWarranty(referenceCode, days, (match[2] || "").trim())
+        : false;
+      await context.call("sendMessage", {
+        chat_id: message.chat.id,
+        text: ok ? `✅ Warranty created for ${referenceCode}: ${days} days.` : "⚠️ Warranty requires a completed repair and 1-730 days."
+      });
+      return;
+    }
 
     if (quoteTargetMatch && context.admins.includes(senderId) && adminReply && !adminReply.startsWith("/")) {
       const referenceCode = quoteTargetMatch[1].toUpperCase();
@@ -948,7 +1045,7 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
 
     await send({
       text: ticket
-        ? `✅ Repair ticket created\nReference: ${ticket.referenceCode}\n\nYour details:\n${details}\n\nUse Track Repair anytime. Final diagnosis and repair price will be confirmed after inspection.`
+        ? `✅ Repair ticket created\nReference: ${ticket.referenceCode}\n\nYour details:\n${details}${ticket.aiTriage ? `\n\n🤖 Visual pre-check\n${ticket.aiTriage}` : ""}\n\nUse Track Repair anytime. Final diagnosis and repair price will be confirmed after technician inspection.`
         : `🛠️ Repair details understood\n\nYour details:\n${details}\n\nI couldn’t create the repair ticket right now. Please tap Talk to Human or try again shortly.`,
       reply_markup: {
         inline_keyboard: ticket ? [

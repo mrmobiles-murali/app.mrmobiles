@@ -145,6 +145,71 @@ export function aiRuntimeConfigured() {
   return Boolean(process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN);
 }
 
+export async function analyzeRepairPhoto(
+  caption: string,
+  imageDataUrl: string
+): Promise<string | null> {
+  const credential = process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN;
+  if (!credential || !imageDataUrl.startsWith("data:image/")) return null;
+
+  try {
+    const response = await fetch("https://ai-gateway.vercel.sh/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${credential}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: process.env.MR_MOBILES_VISION_MODEL || "openai/gpt-5.4-mini",
+        stream: false,
+        messages: [
+          {
+            role: "system",
+            content: [
+              "You are the Mr Mobiles visual repair triage assistant.",
+              "Inspect only what is visibly supported by the photo and customer caption.",
+              "Do not claim hidden/internal damage, exact fault, repair price, part requirement or warranty coverage from the photo alone.",
+              "Return 2-4 short lines: visible observation, useful technician checks/questions, and a final line saying technician inspection confirms diagnosis and price.",
+              "Mirror the customer's language when practical. Keep the full answer under 650 characters."
+            ].join("\n")
+          },
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: `Customer description: ${caption.trim().slice(0, 1000)}`
+              },
+              {
+                type: "image_url",
+                image_url: { url: imageDataUrl }
+              }
+            ]
+          }
+        ],
+        max_completion_tokens: 220
+      }),
+      cache: "no-store",
+      signal: AbortSignal.timeout(18000)
+    });
+
+    if (!response.ok) return null;
+    const data = await response.json();
+    const content = data?.choices?.[0]?.message?.content;
+    if (typeof content === "string") return cleanReply(content).slice(0, 650) || null;
+    if (Array.isArray(content)) {
+      const text = content
+        .map((part: any) => typeof part?.text === "string" ? part.text : "")
+        .filter(Boolean)
+        .join("\n");
+      return cleanReply(text).slice(0, 650) || null;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export async function answerBusinessQuestion(
   userId: number,
   message: string,

@@ -401,6 +401,132 @@ test("replying to bound quote prompt sends quote without retyping repair referen
   assert.match(calls[0].body.text, /₹2,500/);
 });
 
+test("photo repair ticket shows grounded AI visual pre-check when available", async () => {
+  const { ctx, calls } = context({
+    repairIntake: async () => ({
+      referenceCode: "MRR-ABCDEF1234",
+      aiTriage: "Visible screen glass damage. Technician should verify touch and display output. Technician inspection confirms diagnosis and price."
+    })
+  });
+  await handleBotUpdate({
+    update_id: 131,
+    message: {
+      chat: { id: 42, type: "private" },
+      from: { id: 42, first_name: "Customer" },
+      caption: "Samsung A17 5G screen cracked",
+      photo: [{ file_id: "photo-id" }],
+      reply_to_message: { text: "🛠️ Repair Diagnosis\n\nReply with:" }
+    }
+  }, ctx);
+  assert.match(calls[0].body.text, /Visual pre-check/);
+  assert.match(calls[0].body.text, /Technician inspection confirms diagnosis and price/);
+});
+
+test("admin technician and SLA buttons bind the repair reference", async () => {
+  const first = context();
+  await handleBotUpdate(adminCallback("repair_assign_prompt:MRR-ABCDEF1234"), first.ctx);
+  const assignPrompt = first.calls.find(call => call.method === "sendMessage" && call.body.chat_id === -99);
+  assert.ok(assignPrompt);
+  assert.match(assignPrompt.body.text, /technician/i);
+  assert.match(assignPrompt.body.text, /MRR-ABCDEF1234/);
+  assert.equal(assignPrompt.body.reply_markup.force_reply, true);
+
+  const second = context();
+  await handleBotUpdate(adminCallback("repair_sla_prompt:MRR-ABCDEF1234"), second.ctx);
+  const slaPrompt = second.calls.find(call => call.method === "sendMessage" && call.body.chat_id === -99);
+  assert.ok(slaPrompt);
+  assert.match(slaPrompt.body.text, /SLA/);
+  assert.equal(slaPrompt.body.reply_markup.force_reply, true);
+});
+
+test("replying to technician and SLA prompts updates the bound repair", async () => {
+  let assigned;
+  const a = context({
+    repairAssign: async (referenceCode, technicianName) => {
+      assigned = { referenceCode, technicianName };
+      return true;
+    }
+  });
+  await handleBotUpdate({
+    update_id: 132,
+    message: {
+      chat: { id: -99, type: "group" },
+      from: { id: 99, first_name: "Admin" },
+      text: "Arun Tech",
+      reply_to_message: {
+        text: "👨‍🔧 MR MOBILES technician\nReference: MRR-ABCDEF1234\n\nReply with technician name."
+      }
+    }
+  }, a.ctx);
+  assert.deepEqual(assigned, { referenceCode: "MRR-ABCDEF1234", technicianName: "Arun Tech" });
+
+  let sla;
+  const b = context({
+    repairSetSla: async (referenceCode, hours) => {
+      sla = { referenceCode, hours };
+      return true;
+    }
+  });
+  await handleBotUpdate({
+    update_id: 133,
+    message: {
+      chat: { id: -99, type: "group" },
+      from: { id: 99, first_name: "Admin" },
+      text: "24",
+      reply_to_message: {
+        text: "⏱ MR MOBILES SLA\nReference: MRR-ABCDEF1234\n\nReply with SLA hours (1-720)."
+      }
+    }
+  }, b.ctx);
+  assert.deepEqual(sla, { referenceCode: "MRR-ABCDEF1234", hours: 24 });
+});
+
+test("completed repair ticket offers warranty creation and routes warranty days", async () => {
+  const opened = context({
+    adminRepairTicket: async () => ({
+      reference_code: "MRR-ABCDEF1234",
+      customer_name: "Customer",
+      telegram_user_id: 42,
+      device_brand: "Samsung",
+      device_model: "A17 5G",
+      issue_or_condition: "Touch issue",
+      status: "completed"
+    })
+  });
+  await handleBotUpdate(callback("admin_ticket:MRR-ABCDEF1234"), {
+    ...opened.ctx,
+    admins: [42]
+  });
+  const ticketMessage = opened.calls.find(call => call.method === "sendMessage");
+  assert.ok(ticketMessage);
+  const buttons = ticketMessage.body.reply_markup.inline_keyboard.flat();
+  assert.equal(buttons.some(button => button.callback_data === "warranty_prompt:MRR-ABCDEF1234"), true);
+
+  let warranty;
+  const prompted = context({
+    createWarranty: async (referenceCode, days, note) => {
+      warranty = { referenceCode, days, note };
+      return true;
+    }
+  });
+  await handleBotUpdate({
+    update_id: 134,
+    message: {
+      chat: { id: -99, type: "group" },
+      from: { id: 99, first_name: "Admin" },
+      text: "90 Display replacement service warranty",
+      reply_to_message: {
+        text: "🛡 MR MOBILES warranty\nReference: MRR-ABCDEF1234\n\nReply with: DAYS optional note"
+      }
+    }
+  }, prompted.ctx);
+  assert.deepEqual(warranty, {
+    referenceCode: "MRR-ABCDEF1234",
+    days: 90,
+    note: "Display replacement service warranty"
+  });
+});
+
 test("feedback callback saves rating for authenticated Telegram user", async () => {
   let saved;
   const { ctx, calls } = context({
@@ -440,7 +566,8 @@ test("account command shows orders repairs spend and loyalty points", async () =
         loyaltyPoints: 45,
         repairCount: 2,
         activeRepairs: 1,
-        savedDevices: 2
+        savedDevices: 2,
+        activeWarranties: 1
       };
     }
   });
@@ -493,6 +620,7 @@ test("admin command returns KPI dashboard and actionable repair tickets", async 
       referralCount: 5,
       positiveFeedback: 8,
       negativeFeedback: 1,
+      overdueSla: 1,
       recentRepairs: [{
         reference_code: "MRR-ABCDEF1234",
         customer_name: "Customer",
@@ -550,7 +678,7 @@ test("repair command offers guided diagnosis and Mini App services", async () =>
   await handleBotUpdate(message("/repair"), ctx);
   const rows = calls[0].body.reply_markup.inline_keyboard;
   assert.equal(rows[0][0].callback_data, "repair_start");
-  assert.equal(rows[1][0].web_app.url, "https://mrmobiles.in/?v=2026-10-03.fulfillment-sprint&category=service");
+  assert.equal(rows[1][0].web_app.url, "https://mrmobiles.in/?v=2026-10-03.ops-final&category=service");
 });
 
 test("group updates never retrieve or publish customer orders", async () => {
