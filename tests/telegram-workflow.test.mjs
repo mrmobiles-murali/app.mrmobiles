@@ -447,7 +447,9 @@ test("support message reaches admin before customer acknowledgement", async () =
   await handleBotUpdate(message("/support <script>screen problem</script>"), ctx);
   assert.equal(calls[0].body.chat_id, 99);
   assert.equal(calls[0].body.parse_mode, undefined);
-  assert.match(calls[0].body.text, /\/reply 42/);
+  const buttons = calls[0].body.reply_markup.inline_keyboard[0];
+  assert.equal(buttons[0].callback_data, "reply_default:42");
+  assert.equal(buttons[1].callback_data, "reply_customer:42");
   assert.equal(calls[1].body.chat_id, 42);
 });
 
