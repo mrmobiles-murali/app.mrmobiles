@@ -1,11 +1,14 @@
 import crypto from "node:crypto";
 
-export const BOT_WORKFLOW_VERSION = "2026-09-27.8";
+export const BOT_WORKFLOW_VERSION = "2026-10-03.repairrush";
+export const REPAIR_RUSH_SHORT_NAME = "repairrush";
+export const REPAIR_RUSH_BOT_USERNAME = "MrMobileDoctor_bot";
 export const BOT_COMMANDS = [
   { command: "start", description: "Welcome and open Mr Mobiles" },
   { command: "menu", description: "Open the Mr Mobiles control menu" },
   { command: "ai", description: "Ask the Mr Mobiles AI assistant" },
   { command: "shop", description: "Browse phones and accessories" },
+  { command: "game", description: "Play Mr Mobiles Repair Rush" },
   { command: "repair", description: "Start repair help" },
   { command: "repairs", description: "View your repair tickets" },
   { command: "repairstatus", description: "Track a repair reference" },
@@ -33,6 +36,26 @@ export function miniAppUrl(requestUrl: string, configured?: string): string {
     throw new Error("TELEGRAM_MINI_APP_URL must be an HTTPS URL without credentials.");
   }
   return url.toString();
+}
+
+export function repairRushGameUrl(configured?: string): string | undefined {
+  if (!configured) return undefined;
+  const url = new URL(configured);
+  if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash) {
+    throw new Error("REPAIR_RUSH_GAME_URL must be a public HTTPS URL without credentials or parameters.");
+  }
+  return url.href;
+}
+
+export function isRepairRushUpdate(update: unknown): boolean {
+  const candidate = update as any;
+  const text = typeof candidate?.message?.text === "string" ? candidate.message.text.trim() : "";
+  const query = typeof candidate?.inline_query?.query === "string" ? candidate.inline_query.query.trim() : "";
+  return typeof candidate?.callback_query?.game_short_name === "string" ||
+    candidate?.callback_query?.data === "repairrush_play" ||
+    /^\/game(?:@[A-Za-z0-9_]+)?(?:\s|$)/i.test(text) ||
+    /^\/start(?:@[A-Za-z0-9_]+)?\s+repairrush$/i.test(text) ||
+    /^(repairrush|repair rush|game)$/i.test(query);
 }
 
 export function adminIds(value = ""): number[] {
@@ -83,6 +106,7 @@ export type TelegramCall = (method: string, body: Record<string, unknown>) => Pr
 
 export type BotContext = {
   appUrl: string;
+  gameUrl?: string;
   admins: number[];
   supportChatId?: number;
   botUsername?: string;
@@ -207,7 +231,8 @@ function homeKeyboard(context: BotContext) {
       ],
       [
         { text: "👤 Human Support", callback_data: "human_support" }
-      ]
+      ],
+      ...(context.gameUrl ? [[{ text: "🎮 Repair Rush", callback_data: "repairrush_play" }]] : [])
     ]
   };
 }
@@ -225,6 +250,26 @@ async function safeAnswerCallback(context: BotContext, id: string, text?: string
 
 export async function handleBotUpdate(update: unknown, context: BotContext): Promise<void> {
   const callbackQuery = (update as any)?.callback_query;
+  // Game callbacks also arrive from groups and inline game messages. Handle them
+  // before the private-chat support callbacks, and never append player data.
+  if (callbackQuery && typeof callbackQuery.id === "string" &&
+      Number.isSafeInteger(callbackQuery?.from?.id) && !callbackQuery?.from?.is_bot &&
+      typeof callbackQuery.game_short_name === "string") {
+    if (callbackQuery.game_short_name === REPAIR_RUSH_SHORT_NAME && context.gameUrl) {
+      await context.call("answerCallbackQuery", {
+        callback_query_id: callbackQuery.id,
+        url: repairRushGameUrl(context.gameUrl),
+        cache_time: 0
+      });
+    } else {
+      await context.call("answerCallbackQuery", {
+        callback_query_id: callbackQuery.id,
+        text: "This game is not available yet. Please try again soon.",
+        show_alert: true
+      });
+    }
+    return;
+  }
   if (callbackQuery && typeof callbackQuery.id === "string" &&
       Number.isSafeInteger(callbackQuery?.from?.id) && !callbackQuery?.from?.is_bot &&
       callbackQuery?.message?.chat?.type === "private" &&
@@ -232,6 +277,14 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
     const userId = callbackQuery.from.id as number;
     const chatId = callbackQuery.message.chat.id as number;
     const data = typeof callbackQuery.data === "string" ? callbackQuery.data : "";
+
+    if (data === "repairrush_play") {
+      await safeAnswerCallback(context, callbackQuery.id);
+      await context.call(context.gameUrl ? "sendGame" : "sendMessage", context.gameUrl
+        ? { chat_id: chatId, game_short_name: REPAIR_RUSH_SHORT_NAME }
+        : { chat_id: chatId, text: "Repair Rush is being connected. Please try again soon." });
+      return;
+    }
 
     if (data === "ai_help") {
       await safeAnswerCallback(context, callbackQuery.id, "AI assistant ready");
@@ -378,6 +431,15 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
   if (inlineQuery && typeof inlineQuery.id === "string" &&
       Number.isSafeInteger(inlineQuery?.from?.id) && !inlineQuery?.from?.is_bot) {
     const query = typeof inlineQuery.query === "string" ? inlineQuery.query.trim().slice(0, 100) : "";
+    if (/^(repairrush|repair rush|game)$/i.test(query)) {
+      await context.call("answerInlineQuery", {
+        inline_query_id: inlineQuery.id,
+        results: context.gameUrl ? [{ type: "game", id: REPAIR_RUSH_SHORT_NAME, game_short_name: REPAIR_RUSH_SHORT_NAME }] : [],
+        cache_time: 0,
+        is_personal: true
+      });
+      return;
+    }
     const products = (await context.searchProducts(query)).slice(0, 10);
     const results = products.map((product) => {
       const viewUrl = new URL(context.appUrl);
@@ -463,6 +525,12 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
   const text = typeof message.text === "string" ? message.text.trim() : "";
   const command = text.split(/\s+/)[0].split("@")[0].toLowerCase();
   const argument = text.replace(/^\S+\s*/, "");
+  if (command === "/game" || (command === "/start" && argument === REPAIR_RUSH_SHORT_NAME)) {
+    await context.call(context.gameUrl ? "sendGame" : "sendMessage", context.gameUrl
+      ? { chat_id: chatId, game_short_name: REPAIR_RUSH_SHORT_NAME }
+      : { chat_id: chatId, text: "Repair Rush is being connected. Please try again soon." });
+    return;
+  }
   const isAdmin = context.admins.includes(userId);
   const send = (body: Record<string, unknown>) => context.call("sendMessage", { chat_id: chatId, ...body });
   const keyboard = (label = "Open Mr Mobiles", category?: string) => {

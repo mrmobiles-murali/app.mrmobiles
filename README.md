@@ -13,6 +13,7 @@ Clean-slate rebuild for **https://mrmobiles.in**.
 - Supabase order persistence
 - Telegram payment confirmation
 - Vercel-ready Next.js app
+- Repair Rush HTML5 game and launch integration ([setup](docs/REPAIR_RUSH.md))
 
 ## Custom domain target (verify routing before switching)
 
