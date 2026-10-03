@@ -19,6 +19,17 @@ function callback(data) {
     }
   };
 }
+function adminCallback(data, chat = { id: -99, type: "group" }) {
+  return {
+    update_id: 126,
+    callback_query: {
+      id: "cb-admin",
+      from: { id: 99, first_name: "Admin" },
+      data,
+      message: { chat }
+    }
+  };
+}
 function sampleProduct(overrides = {}) {
   return {
     id: "iphone-13-pro-128",
@@ -374,6 +385,45 @@ test("orders are scoped to sender identity, never a user-supplied argument", asy
   await handleBotUpdate(message("/orders 999"), ctx);
   assert.equal(queried, 42);
   assert.match(calls[0].body.text, /123\.45/);
+});
+
+test("admin can send the default repair reply with one tap and no manual customer ID", async () => {
+  const { ctx, calls } = context();
+  await handleBotUpdate(adminCallback("reply_default:8624638243"), ctx);
+  const delivered = calls.find(call => call.method === "sendMessage" && call.body.chat_id === 8624638243);
+  assert.ok(delivered);
+  assert.match(delivered.body.text, /repair request has been received/i);
+  assert.match(delivered.body.text, /MR MOBILES/);
+  assert.equal(calls.some(call => call.method === "answerCallbackQuery"), true);
+});
+
+test("custom reply button binds the customer ID and opens an editable force-reply prompt", async () => {
+  const { ctx, calls } = context();
+  await handleBotUpdate(adminCallback("reply_customer:8624638243"), ctx);
+  const prompt = calls.find(call => call.method === "sendMessage" && call.body.chat_id === -99);
+  assert.ok(prompt);
+  assert.match(prompt.body.text, /Customer ID: 8624638243/);
+  assert.match(prompt.body.text, /Suggested reply:/);
+  assert.equal(prompt.body.reply_markup.force_reply, true);
+});
+
+test("replying to the admin prompt routes the message to the bound customer without slash reply", async () => {
+  const { ctx, calls } = context();
+  await handleBotUpdate({
+    update_id: 127,
+    message: {
+      chat: { id: -99, type: "group" },
+      from: { id: 99, first_name: "Admin" },
+      text: "Your repair is being checked now.",
+      reply_to_message: {
+        text: "↩️ MR MOBILES reply\nCustomer ID: 8624638243\n\nSuggested reply:\nYour repair request has been received ✅"
+      }
+    }
+  }, ctx);
+  assert.equal(calls[0].method, "sendMessage");
+  assert.equal(calls[0].body.chat_id, 8624638243);
+  assert.match(calls[0].body.text, /being checked now/);
+  assert.equal(calls[1].body.chat_id, -99);
 });
 
 test("non-admin cannot send customer replies", async () => {
