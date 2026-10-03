@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { validateTelegramInitData } from "@/lib/telegram-auth";
-import { fetchRazorpayPayment, verifyPaymentSignature } from "@/lib/razorpay";
+import {
+  captureRazorpayPayment,
+  fetchRazorpayPayment,
+  verifyPaymentSignature
+} from "@/lib/razorpay";
 import { sendTelegramMessage } from "@/lib/telegram-bot";
 
 export async function POST(request: NextRequest) {
@@ -53,14 +57,14 @@ export async function POST(request: NextRequest) {
       throw new Error("Payment signature verification failed.");
     }
 
-    const payment = await fetchRazorpayPayment(paymentId);
-    const captured = payment.status === "captured" || payment.captured === true;
+    let payment = await fetchRazorpayPayment(paymentId);
 
-    if (
-      payment.order_id !== order.razorpay_order_id ||
-      Number(payment.amount) !== Number(order.amount_paise) ||
-      String(payment.currency || "").toUpperCase() !== String(order.currency || "INR").toUpperCase()
-    ) {
+    const paymentMatchesOrder = (candidate: typeof payment) =>
+      candidate.order_id === order.razorpay_order_id &&
+      Number(candidate.amount) === Number(order.amount_paise) &&
+      String(candidate.currency || "").toUpperCase() === String(order.currency || "INR").toUpperCase();
+
+    if (!paymentMatchesOrder(payment)) {
       await supabase.from("orders").update({
         status: "payment_mismatch",
         workflow_status: "payment_issue",
@@ -70,14 +74,47 @@ export async function POST(request: NextRequest) {
       throw new Error("Payment details did not match the order.");
     }
 
+    let captured = payment.status === "captured" || payment.captured === true;
+
+    if (!captured && payment.status === "authorized") {
+      try {
+        payment = await captureRazorpayPayment({
+          paymentId,
+          amountPaise: Number(order.amount_paise),
+          currency: String(order.currency || "INR")
+        });
+      } catch (captureError) {
+        const refreshed = await fetchRazorpayPayment(paymentId);
+        if (paymentMatchesOrder(refreshed) && (refreshed.status === "captured" || refreshed.captured === true)) {
+          payment = refreshed;
+        } else {
+          await supabase.from("orders").update({
+            status: "payment_capture_failed",
+            workflow_status: "payment_issue",
+            workflow_note: "Payment was authorized but server capture did not complete. Retry status refresh or contact support.",
+            updated_at: new Date().toISOString()
+          }).eq("id", order.id);
+          throw captureError;
+        }
+      }
+      captured = paymentMatchesOrder(payment) && (payment.status === "captured" || payment.captured === true);
+    }
+
     if (!captured) {
+      const failed = payment.status === "failed";
       await supabase.from("orders").update({
-        status: "payment_authorized",
-        workflow_status: "payment_processing",
-        workflow_note: "Payment authorized; waiting for capture.",
+        status: failed ? "payment_failed" : "payment_pending",
+        workflow_status: failed ? "payment_issue" : "payment_processing",
+        workflow_note: failed
+          ? "Razorpay reported the payment as failed. Retry checkout or contact support."
+          : `Payment status is ${payment.status || "pending"}; waiting for a captured payment.`,
         updated_at: new Date().toISOString()
       }).eq("id", order.id);
-      throw new Error("Payment is not captured yet. Reopen the Mini App shortly to refresh the status.");
+      throw new Error(
+        failed
+          ? "Payment failed. Please try again or use /support."
+          : "Payment is still processing. Reopen the Mini App shortly to refresh the status."
+      );
     }
 
     const { data: updated, error: updateError } = await supabase
