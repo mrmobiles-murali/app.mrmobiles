@@ -99,6 +99,94 @@ button { font: inherit; }
   font-weight: 800;
 }
 
+
+.accountPanel {
+  margin-bottom: 16px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 18px;
+  overflow: hidden;
+}
+
+.accountToggle {
+  width: 100%;
+  min-height: 62px;
+  padding: 12px 15px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.accountToggle > span:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.accountToggle small,
+.accountBody p,
+.repairItem span {
+  color: var(--muted);
+  font-size: .78rem;
+}
+
+.accountToggle > span:last-child {
+  color: var(--accent);
+  font-size: 1.5rem;
+}
+
+.accountBody {
+  padding: 0 14px 14px;
+  border-top: 1px solid var(--line);
+}
+
+.accountBody h3 {
+  margin: 14px 0 8px;
+  color: var(--muted);
+  font-size: .72rem;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.repairItem {
+  padding: 10px 0;
+  display: grid;
+  gap: 4px;
+  border-top: 1px solid rgba(37, 44, 52, .7);
+}
+
+.repairItem:first-of-type { border-top: 0; }
+
+.repairItem em {
+  width: fit-content;
+  padding: 4px 7px;
+  border: 1px solid rgba(20, 184, 166, .35);
+  background: rgba(20, 184, 166, .08);
+  border-radius: 999px;
+  color: var(--accent);
+  font-size: .72rem;
+  font-style: normal;
+  text-transform: capitalize;
+}
+
+.deviceList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.deviceList > span {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  border-radius: 999px;
+  font-size: .82rem;
+}
+
 .grid {
   display: grid;
   gap: 12px;
