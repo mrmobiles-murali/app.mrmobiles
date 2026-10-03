@@ -24,6 +24,52 @@ function settings(request: NextRequest) {
   };
 }
 
+function repairAdminKeyboard(referenceCode: string, userId?: number) {
+  const rows: Array<Array<Record<string, string>>> = [
+    [
+      { text: "🔎 Diagnosing", callback_data: `repair_admin:${referenceCode}:diagnosing` },
+      { text: "💰 Send Quote", callback_data: `repair_quote_prompt:${referenceCode}` }
+    ],
+    [
+      { text: "🔧 Repairing", callback_data: `repair_admin:${referenceCode}:repairing` },
+      { text: "📦 Ready", callback_data: `repair_admin:${referenceCode}:ready` }
+    ],
+    [
+      { text: "✅ Completed", callback_data: `repair_admin:${referenceCode}:completed` }
+    ]
+  ];
+
+  if (Number.isSafeInteger(userId) && Number(userId) > 0) {
+    rows.push([
+      { text: "⚡ Default Reply", callback_data: `reply_default:${userId}` },
+      { text: "✍️ Custom Reply", callback_data: `reply_customer:${userId}` }
+    ]);
+  }
+  return { inline_keyboard: rows };
+}
+
+function repairCustomerStatusText(referenceCode: string, status: string, note?: string | null) {
+  const messages: Record<string, [string, string]> = {
+    received: ["🛠 Repair received", "Your device is in the Mr Mobiles repair queue."],
+    reviewing: ["👀 Repair under review", "Our team is reviewing your repair request."],
+    diagnosing: ["🔎 Diagnosis started", "A technician has started inspecting your device."],
+    awaiting_approval: ["💰 Approval required", "Your repair quote is ready for approval."],
+    approved: ["✅ Quote approved", "Your approval is recorded and the repair can proceed."],
+    repairing: ["🔧 Repair in progress", "Work on your device has started."],
+    ready: ["📦 Repair ready", "Your device is ready for pickup or delivery."],
+    completed: ["✅ Repair completed", "Your repair ticket is completed. Thank you for choosing Mr Mobiles."],
+    rejected: ["⛔ Repair declined", "This repair has been marked as declined."],
+    cancelled: ["🚫 Repair cancelled", "This repair ticket has been cancelled."]
+  };
+  const [title, body] = messages[status] || ["🛠 Repair status updated", `Status: ${status}`];
+  return [
+    title,
+    `Reference: ${referenceCode}`,
+    body,
+    note ? `Note: ${note}` : ""
+  ].filter(Boolean).join("\n");
+}
+
 function status(request: NextRequest) {
   const config = settings(request);
   const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -57,6 +103,8 @@ function status(request: NextRequest) {
     homeDashboard: true,
     paymentLifecycleNotifications: true,
     profileSelfHeal: true,
+    adminRepairControls: true,
+    repairLifecycleNotifications: true,
     inventorySource: "supabase",
     miniAppUrl: config.appUrl, commands: BOT_COMMANDS
   };
@@ -213,16 +261,9 @@ export async function POST(request: NextRequest) {
                   `Device: ${[ticket.device_brand, ticket.device_model].filter(Boolean).join(" ")}`,
                   `Issue: ${ticket.issue_or_condition}`,
                   "",
-                  "Admin tools:",
-                  `/repairupdate ${ticket.reference_code} diagnosing Device inspection started`,
-                  `/repairquote ${ticket.reference_code} 2500 Display replacement quote`
+                  "Tap an action below — customer ID and repair reference are already linked."
                 ].join("\n"),
-                reply_markup: {
-                  inline_keyboard: [[
-                    { text: "⚡ Send Default Reply", callback_data: `reply_default:${userId}` },
-                    { text: "✍️ Custom Reply", callback_data: `reply_customer:${userId}` }
-                  ]]
-                }
+                reply_markup: repairAdminKeyboard(ticket.reference_code, userId)
               });
             } catch {
               // Ticket remains valid even if the admin notification is temporarily unavailable.
@@ -253,12 +294,13 @@ export async function POST(request: NextRequest) {
           try {
             await callTelegram("sendMessage", {
               chat_id: Number(ticket.telegram_user_id),
-              text: [
-                "🛠 Repair status updated",
-                `Reference: ${ticket.reference_code}`,
-                `Status: ${ticket.status}`,
-                ticket.status_note ? `Note: ${ticket.status_note}` : ""
-              ].filter(Boolean).join("\n")
+              text: repairCustomerStatusText(ticket.reference_code, ticket.status, ticket.status_note),
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: "📍 Track Repair", callback_data: `repair_status:${ticket.reference_code}` }],
+                  [{ text: "👤 Talk to Human", callback_data: "human_support" }]
+                ]
+              }
             });
           } catch {
             // The database state is authoritative even if notification delivery fails.
@@ -314,8 +356,9 @@ export async function POST(request: NextRequest) {
                 `Customer ID: ${userId}`,
                 "Status: approved",
                 "",
-                `/repairupdate ${ticket.reference_code} repairing Repair work started`
-              ].join("\n")
+                "Tap the next repair action below."
+              ].join("\n"),
+              reply_markup: repairAdminKeyboard(ticket.reference_code, userId)
             });
           } catch {
             // Approval is already stored.
