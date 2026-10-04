@@ -16,6 +16,9 @@ export async function GET() {
       category: product.category,
       emoji: product.emoji,
       imageUrl: product.imageUrl || null,
+      dailyVisualUrl: product.dailyVisualUrl || null,
+      visualRotationCount: product.visualRotationCount || 0,
+      visualDay: product.visualDay || null,
       stockQty: product.stockQty ?? null
     })),
     { headers: { "Cache-Control": "no-store" } }
