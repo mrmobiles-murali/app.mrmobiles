@@ -591,7 +591,7 @@ export default function Home() {
           <h1>Tech, styled better.</h1>
           <p>Phones, accessories, smart wearables, audio and repair — presented like a premium showroom inside Telegram.</p>
         </div>
-        <div className="brandMark">Mr</div>
+        <div className="brandMark" aria-label="Mr Mobiles"><span>MR</span><small>MOBILES</small></div>
       </section>
 
       <nav className="chips" aria-label="Product categories">
