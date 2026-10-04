@@ -35,6 +35,7 @@ type AccountOrder = {
   created_at: string;
   paid_at?: string | null;
   receipt_code: string;
+  receipt_url: string;
 };
 
 type AccountSummary = {
@@ -633,6 +634,7 @@ export default function Home() {
                       <strong>{order.receipt_code}</strong>
                       <span>{money(order.amount_paise)} · {order.status}{order.workflow_status ? ` · ${order.workflow_status.replaceAll("_", " ")}` : ""}</span>
                       <em>{order.tracking_code || "Order receipt"}</em>
+                      <a className="receiptLink" href={order.receipt_url}>View receipt / PDF</a>
                     </div>
                   )) : <p>No Telegram orders yet.</p>}
                   <h3>Service warranties</h3>
