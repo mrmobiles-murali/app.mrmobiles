@@ -1479,6 +1479,28 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
       return;
     }
 
+    if (ticket && requestedStatus !== ticket.status) {
+      const allowedTransitions: Record<string, string[]> = {
+        received: ["reviewing", "diagnosing", "rejected", "cancelled"],
+        reviewing: ["diagnosing", "rejected", "cancelled"],
+        diagnosing: ["rejected", "cancelled"],
+        awaiting_approval: ["rejected", "cancelled"],
+        approved: ["rejected", "cancelled"],
+        repairing: ["ready", "cancelled"],
+        ready: ["completed"],
+        completed: [],
+        rejected: [],
+        cancelled: []
+      };
+      const allowed = allowedTransitions[String(ticket.status || "")] || [];
+      if (!allowed.includes(requestedStatus)) {
+        await send({
+          text: `⚠️ ${referenceCode} cannot move from ${ticket.status} to ${requestedStatus}. Use the repair controls for the next valid step.`
+        });
+        return;
+      }
+    }
+
     const ok = context.repairUpdate
       ? await context.repairUpdate(referenceCode, requestedStatus, (match[3] || "").trim())
       : false;
