@@ -5,6 +5,9 @@ export type InventoryProduct = Product & {
   brand?: string | null;
   model?: string | null;
   imageUrl?: string | null;
+  dailyVisualUrl?: string | null;
+  visualRotationCount?: number;
+  visualDay?: string;
   stockQty?: number | null;
   active?: boolean;
   searchAliases?: string[];
@@ -25,6 +28,51 @@ type ProductRow = {
   search_aliases: string[] | null;
 };
 
+type ProductVisualRow = {
+  product_id: string;
+  image_url: string;
+  alt_text: string | null;
+  priority: number;
+  valid_from: string | null;
+  valid_to: string | null;
+};
+
+function indiaDayKey(now = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(now);
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${value.year}-${value.month}-${value.day}`;
+}
+
+function stableHash(value: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function validVisual(row: ProductVisualRow, day: string) {
+  return (!row.valid_from || row.valid_from <= day) && (!row.valid_to || row.valid_to >= day);
+}
+
+function dailyVisualUrl(product: Pick<InventoryProduct, "id" | "category" | "emoji">, day: string) {
+  const variant = stableHash(`${day}:${product.id}`) % 6;
+  const params = new URLSearchParams({
+    id: product.id,
+    category: product.category,
+    emoji: product.emoji,
+    day,
+    variant: String(variant)
+  });
+  return `/api/product-visual?${params.toString()}`;
+}
+
 function mapRow(row: ProductRow): InventoryProduct {
   return {
     id: row.id,
@@ -43,12 +91,56 @@ function mapRow(row: ProductRow): InventoryProduct {
 }
 
 function fallbackProducts(): InventoryProduct[] {
+  const day = indiaDayKey();
   return catalog.map((product) => ({
     ...product,
+    imageUrl: null,
+    dailyVisualUrl: dailyVisualUrl(product, day),
+    visualRotationCount: 0,
+    visualDay: day,
     stockQty: null,
     active: true,
     searchAliases: []
   }));
+}
+
+async function attachDailyVisuals(products: InventoryProduct[]): Promise<InventoryProduct[]> {
+  if (!products.length) return products;
+
+  const day = indiaDayKey();
+  const ids = products.map((product) => product.id);
+  const { data, error } = await getSupabaseAdmin()
+    .from("product_visuals")
+    .select("product_id,image_url,alt_text,priority,valid_from,valid_to")
+    .in("product_id", ids)
+    .eq("active", true)
+    .order("priority", { ascending: true });
+
+  const rows = error ? [] : (data || []) as ProductVisualRow[];
+  const byProduct = new Map<string, ProductVisualRow[]>();
+
+  for (const row of rows) {
+    if (!validVisual(row, day)) continue;
+    const bucket = byProduct.get(row.product_id) || [];
+    bucket.push(row);
+    byProduct.set(row.product_id, bucket);
+  }
+
+  return products.map((product) => {
+    const approved = (byProduct.get(product.id) || []).map((item) => item.image_url);
+    const pool = [...new Set([product.imageUrl || "", ...approved].filter(Boolean))];
+    const selected = pool.length
+      ? pool[stableHash(`${day}:${product.id}:approved`) % pool.length]
+      : null;
+
+    return {
+      ...product,
+      imageUrl: selected,
+      dailyVisualUrl: dailyVisualUrl(product, day),
+      visualRotationCount: pool.length,
+      visualDay: day
+    };
+  });
 }
 
 export async function listInventoryProducts(options: { allowFallback?: boolean } = {}): Promise<InventoryProduct[]> {
@@ -65,13 +157,12 @@ export async function listInventoryProducts(options: { allowFallback?: boolean }
       .filter((product) => product.stockQty === null || product.stockQty === undefined || product.stockQty > 0);
 
     if (!products.length && options.allowFallback) return fallbackProducts();
-    return products;
+    return attachDailyVisuals(products);
   } catch {
     if (options.allowFallback) return fallbackProducts();
     throw new Error("Live inventory is temporarily unavailable.");
   }
 }
-
 
 export async function getInventoryProductsByIds(ids: string[]): Promise<InventoryProduct[]> {
   const unique = [...new Set(ids.filter(id => /^[A-Za-z0-9_-]{1,64}$/.test(id)))].slice(0, 10);
@@ -84,7 +175,7 @@ export async function getInventoryProductsByIds(ids: string[]): Promise<Inventor
     .eq("active", true);
 
   if (error) throw new Error("Inventory lookup failed.");
-  return (data || []).map((row) => mapRow(row as ProductRow));
+  return attachDailyVisuals((data || []).map((row) => mapRow(row as ProductRow)));
 }
 
 export async function searchInventoryProducts(query: string): Promise<InventoryProduct[]> {
@@ -107,8 +198,8 @@ export async function searchInventoryProducts(query: string): Promise<InventoryP
       const model = (product.model || "").toLowerCase();
       const score = terms.length
         ? terms.reduce((sum, term) => {
-            if (name.split(/\\s+/).includes(term)) return sum + 3;
-            if (brand.split(/\\s+/).includes(term) || model.split(/\\s+/).includes(term)) return sum + 3;
+            if (name.split(/\s+/).includes(term)) return sum + 3;
+            if (brand.split(/\s+/).includes(term) || model.split(/\s+/).includes(term)) return sum + 3;
             return sum + (haystack.includes(term) ? 1 : 0);
           }, 0)
         : 0;

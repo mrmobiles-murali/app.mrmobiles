@@ -9,6 +9,9 @@ type StoreProduct = Product & {
   brand?: string | null;
   model?: string | null;
   imageUrl?: string | null;
+  dailyVisualUrl?: string | null;
+  visualRotationCount?: number;
+  visualDay?: string | null;
   stockQty?: number | null;
 };
 
@@ -683,9 +686,9 @@ export default function Home() {
           return (
             <article className="card" key={product.id}>
               <div className="productIcon">
-                {product.imageUrl ? (
+                {product.imageUrl || product.dailyVisualUrl ? (
                   <img
-                    src={product.imageUrl}
+                    src={product.imageUrl || product.dailyVisualUrl || ""}
                     alt={product.name}
                     loading="lazy"
                     decoding="async"
@@ -697,7 +700,7 @@ export default function Home() {
                     <small>MR MOBILES</small>
                   </div>
                 )}
-                <span className="visualBadge">{product.category === "phone" ? "PHONE" : product.category === "accessory" ? "ACCESSORY" : "SERVICE"}</span>
+                <span className="visualBadge">{product.category === "phone" ? "PHONE" : product.category === "accessory" ? "GADGET" : "SERVICE"}</span>
               </div>
               <div className="cardBody">
                 <span className="pill">{product.category}</span>
