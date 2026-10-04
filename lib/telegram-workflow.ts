@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 
-export const BOT_WORKFLOW_VERSION = "2026-10-03.ops-final";
+export const BOT_WORKFLOW_VERSION = "2026-10-03.catalog-final";
 export const REPAIR_RUSH_SHORT_NAME = "repairrush";
 export const REPAIR_RUSH_BOT_USERNAME = "MrMobileDoctor_bot";
 const WEBSITE_PRODUCT_NAMES: Record<number, string> = {
@@ -167,7 +167,14 @@ export type AdminDashboardSummary = {
   positiveFeedback: number;
   negativeFeedback: number;
   overdueSla: number;
+  unknownStock: number;
   recentRepairs: AdminRepairTicket[];
+};
+
+export type AdminInventoryItem = {
+  id: string;
+  name: string;
+  stockQty?: number | null;
 };
 
 export type InlineProduct = {
@@ -212,6 +219,8 @@ export type BotContext = {
   repairAssign?: (referenceCode: string, technicianName: string) => Promise<boolean>;
   repairSetSla?: (referenceCode: string, hours: number) => Promise<boolean>;
   createWarranty?: (referenceCode: string, days: number, note: string) => Promise<boolean>;
+  inventoryAdmin?: () => Promise<AdminInventoryItem[]>;
+  updateStock?: (productId: string, qty: number) => Promise<boolean>;
   accountSummary?: (userId: number) => Promise<AccountSummary>;
   recordReferral?: (referredUserId: number, referrerUserId: number, source?: "bot_start" | "mini_app") => Promise<boolean>;
   adminDashboard?: () => Promise<AdminDashboardSummary>;
@@ -340,6 +349,7 @@ function adminDashboardText(summary: AdminDashboardSummary): string {
     `Low stock: ${summary.lowStock}`,
     `Referrals: ${summary.referralCount}`,
     `SLA overdue: ${summary.overdueSla}`,
+    `Stock unknown: ${summary.unknownStock}`,
     `AI feedback: 👍 ${summary.positiveFeedback} • 👎 ${summary.negativeFeedback}`
   ].join("\n");
 }
@@ -1441,7 +1451,7 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
     });
   } else if (command === "/help") {
     const help = BOT_COMMANDS.map(c => `/${c.command} — ${c.description}`).join("\n");
-    await send({ text: `${help}\n\nYou can also just type a normal question to chat with the AI assistant.${isAdmin ? "\n\nAdmin tools:\n/admin — control centre\n/reply CUSTOMER_ID message\n/repairupdate MRR-... STATUS note\n/repairquote MRR-... AMOUNT note" : ""}` });
+    await send({ text: `${help}\n\nYou can also just type a normal question to chat with the AI assistant.${isAdmin ? "\n\nAdmin tools:\n/admin — control centre\n/inventory — inventory overview\n/stock PRODUCT_ID QTY — update stock\n/reply CUSTOMER_ID message\n/repairupdate MRR-... STATUS note\n/repairquote MRR-... AMOUNT note" : ""}` });
   } else if (command === "/orders") {
     const orders = await context.orders(userId);
     if (!orders.length) {
@@ -1454,6 +1464,37 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
       return `${i + 1}. #${String(order.id).slice(0, 8)} • ${amount}\nPayment: ${order.status}${workflow}`;
     });
     await send({ text: `🧾 Your recent orders\n\n${lines.join("\n\n")}`, reply_markup: keyboard() });
+  } else if (command === "/inventory") {
+    if (!isAdmin) {
+      await send({ text: "This command is available to the Mr Mobiles support team." });
+      return;
+    }
+    const items = context.inventoryAdmin ? await context.inventoryAdmin() : [];
+    const lines = items.slice(0, 30).map((item, index) =>
+      `${index + 1}. ${item.name}\nID: ${item.id} • Stock: ${typeof item.stockQty === "number" ? item.stockQty : "confirm"}`
+    );
+    await send({
+      text: lines.length
+        ? `📦 Mr Mobiles Inventory\n\n${lines.join("\n\n")}\n\nUpdate: /stock PRODUCT_ID QTY`
+        : "Inventory is temporarily unavailable."
+    });
+  } else if (command === "/stock") {
+    if (!isAdmin) {
+      await send({ text: "This command is available to the Mr Mobiles support team." });
+      return;
+    }
+    const match = argument.match(/^([A-Za-z0-9_-]{1,64})\s+(\d{1,5})$/);
+    const qty = Number(match?.[2]);
+    if (!match || !Number.isInteger(qty) || qty < 0 || qty > 99999) {
+      await send({ text: "Usage: /stock PRODUCT_ID QTY\nExample: /stock iphone-12-64 3" });
+      return;
+    }
+    const ok = context.updateStock ? await context.updateStock(match[1], qty) : false;
+    await send({
+      text: ok
+        ? `${qty <= 2 ? "⚠️ Low stock alert\n" : "✅ "}${match[1]} stock updated to ${qty}.`
+        : "Stock update failed or product ID was not found."
+    });
   } else if (command === "/repairupdate") {
     if (!isAdmin) {
       await send({ text: "This command is available to the Mr Mobiles support team." });

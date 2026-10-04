@@ -72,6 +72,17 @@ function money(paise: number) {
   }).format(paise / 100);
 }
 
+function productVisualUrl(product: StoreProduct) {
+  if (product.imageUrl) return product.imageUrl;
+  const params = new URLSearchParams({
+    name: product.name,
+    price: money(product.pricePaise),
+    stock: typeof product.stockQty === "number" ? `${product.stockQty} in stock` : "Stock confirmation required",
+    emoji: product.emoji
+  });
+  return `/api/product-card?${params.toString()}`;
+}
+
 export default function Home() {
   const [cart, setCart] = useState<CartMap>({});
   const [products, setProducts] = useState<StoreProduct[]>(catalog);
@@ -672,7 +683,14 @@ export default function Home() {
           const qty = cart[product.id] || 0;
           return (
             <article className="card" key={product.id}>
-              <div className="productIcon" aria-hidden="true">{product.emoji}</div>
+              <div className="productIcon">
+                <img
+                  src={productVisualUrl(product)}
+                  alt=""
+                  loading="lazy"
+                  referrerPolicy="no-referrer"
+                />
+              </div>
               <div className="cardBody">
                 <span className="pill">{product.category}</span>
                 <h2>{product.name}</h2>

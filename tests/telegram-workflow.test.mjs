@@ -621,6 +621,7 @@ test("admin command returns KPI dashboard and actionable repair tickets", async 
       positiveFeedback: 8,
       negativeFeedback: 1,
       overdueSla: 1,
+      unknownStock: 4,
       recentRepairs: [{
         reference_code: "MRR-ABCDEF1234",
         customer_name: "Customer",
@@ -665,6 +666,32 @@ test("photo repair intake routes the Telegram photo file id with caption details
   assert.match(calls[0].body.text, /Repair ticket created/);
 });
 
+test("admin inventory command lists product IDs and stock truth", async () => {
+  const { ctx, calls } = context({
+    inventoryAdmin: async () => [
+      { id: "iphone-12-64", name: "iPhone 12 64GB", stockQty: 3 },
+      { id: "pixel-7-128", name: "Pixel 7 128GB", stockQty: null }
+    ]
+  });
+  await handleBotUpdate(message("/inventory", { from: { id: 99, first_name: "Admin" } }), ctx);
+  assert.match(calls[0].body.text, /iphone-12-64/);
+  assert.match(calls[0].body.text, /Stock: 3/);
+  assert.match(calls[0].body.text, /Stock: confirm/);
+});
+
+test("admin stock command updates live stock and warns when low", async () => {
+  let updated;
+  const { ctx, calls } = context({
+    updateStock: async (productId, qty) => {
+      updated = { productId, qty };
+      return true;
+    }
+  });
+  await handleBotUpdate(message("/stock iphone-12-64 2", { from: { id: 99, first_name: "Admin" } }), ctx);
+  assert.deepEqual(updated, { productId: "iphone-12-64", qty: 2 });
+  assert.match(calls[0].body.text, /Low stock alert/);
+});
+
 test("privacy command warns against sensitive credentials", async () => {
   const { ctx, calls } = context();
   await handleBotUpdate(message("/privacy"), ctx);
@@ -678,7 +705,7 @@ test("repair command offers guided diagnosis and Mini App services", async () =>
   await handleBotUpdate(message("/repair"), ctx);
   const rows = calls[0].body.reply_markup.inline_keyboard;
   assert.equal(rows[0][0].callback_data, "repair_start");
-  assert.equal(rows[1][0].web_app.url, "https://mrmobiles.in/?v=2026-10-03.ops-final&category=service");
+  assert.equal(rows[1][0].web_app.url, "https://mrmobiles.in/?v=2026-10-03.catalog-final&category=service");
 });
 
 test("group updates never retrieve or publish customer orders", async () => {
