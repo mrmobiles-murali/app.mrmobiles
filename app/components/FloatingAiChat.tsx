@@ -18,9 +18,9 @@ type ChatMessage = {
 };
 
 const QUICK_PROMPTS = [
-  "I need mobile repair",
-  "Show phones under ₹20,000",
-  "I need order help"
+  "Repair help",
+  "Find a phone",
+  "Order help"
 ];
 
 function visitorToken() {
@@ -54,7 +54,7 @@ export default function FloatingAiChat() {
     {
       id: "welcome",
       role: "assistant",
-      text: "Hi 👋 I’m Mr Mobiles AI. Ask me about phones, accessories, repairs, prices, stock or order help."
+      text: "Hi. Ask me about phones, repairs or your order."
     }
   ]);
   const bottomRef = useRef<HTMLDivElement | null>(null);
@@ -135,7 +135,7 @@ export default function FloatingAiChat() {
             <div className="aiAvatar">AI</div>
             <div>
               <strong>Mr Mobiles AI</strong>
-              <span>Shop • Repair • Support</span>
+              <span>AI support</span>
             </div>
             <button
               type="button"
@@ -205,22 +205,22 @@ export default function FloatingAiChat() {
             </div>
           )}
 
-          <div className="aiHandoff">
+          <div className="aiFooter">
             <a
               href="https://t.me/MrMobileDoctor_bot?start=support"
               target="_blank"
               rel="noreferrer"
             >
-              👨‍🔧 Talk to Mr Mobiles Team
+              Talk to team
             </a>
-            <small>Never share OTP, password, card PIN or CVV in chat.</small>
+            <span>Don’t share OTP, PIN or CVV.</span>
           </div>
 
           <form className="aiComposer" onSubmit={submit}>
             <input
               value={input}
               onChange={(event) => setInput(event.target.value)}
-              placeholder="Ask about a phone or repair…"
+              placeholder="Message Mr Mobiles AI…"
               maxLength={1200}
               aria-label="Message Mr Mobiles AI"
             />
@@ -238,8 +238,7 @@ export default function FloatingAiChat() {
         aria-expanded={open}
         aria-label={open ? "Close Mr Mobiles AI" : "Open Mr Mobiles AI"}
       >
-        <span className="aiLauncherIcon">{open ? "×" : "✦"}</span>
-        {!open && <span className="aiLauncherText">Ask Mr Mobiles AI</span>}
+        <span className="aiLauncherIcon">{open ? "×" : "AI"}</span>
       </button>
     </div>
   );
