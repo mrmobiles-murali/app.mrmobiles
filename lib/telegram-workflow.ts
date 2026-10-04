@@ -915,7 +915,7 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
       await safeAnswerCallback(context, callbackQuery.id, "Repair assistant ready");
       await context.call("sendMessage", {
         chat_id: chatId,
-        text: "🛠️ Repair Diagnosis\n\nReply with:\n• Brand\n• Exact model\n• Problem / damage\n• Optional device photo\n\nExample: Samsung S23 — display cracked and touch not working.\n\nFinal diagnosis and price are confirmed after inspection.",
+        text: "🛠 Repair\n\nReply in one message with: brand • exact model • problem.\nAdd a device photo if it helps.\n\nExample: Samsung S23 — display cracked, touch not working.",
         reply_markup: {
           force_reply: true,
           input_field_placeholder: "Brand + model + problem"
@@ -1229,7 +1229,7 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
   if (isRepairIntakeReply && (text || photoFileId) && !text.startsWith("/")) {
     if (text.length < 6) {
       await send({
-        text: "🛠️ Please add a caption with brand, exact model and the problem. You can attach a device photo too.\n\nExample: Samsung S23 — display cracked and touch not working.",
+        text: "Please send brand, exact model and the problem in one message.\nExample: Samsung S23 — display cracked, touch not working.",
         reply_markup: { force_reply: true, input_field_placeholder: "Brand + model + problem" }
       });
       return;
@@ -1244,17 +1244,22 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
       ? await context.repairIntake(userId, name || "Customer", details, photoFileId)
       : null;
 
-    const serviceUrl = new URL(versionedMiniAppUrl(context.appUrl));
-    serviceUrl.searchParams.set("category", "service");
-
     await send({
       text: ticket
-        ? `✅ Repair ticket created\nReference: ${ticket.referenceCode}\n\nYour details:\n${details}${ticket.aiTriage ? `\n\n🤖 Visual pre-check\n${ticket.aiTriage}` : ""}\n\nUse Track Repair anytime. Final diagnosis and repair price will be confirmed after technician inspection.`
-        : `🛠️ Repair details understood\n\nYour details:\n${details}\n\nI couldn’t create the repair ticket right now. Please tap Talk to Human or try again shortly.`,
+        ? [
+            "✅ Repair request received",
+            `Reference: ${ticket.referenceCode}`,
+            "",
+            "Status: Received",
+            "Next: technician review → quote → your approval.",
+            ticket.aiTriage ? `AI pre-check: ${ticket.aiTriage}` : "",
+            "",
+            "Track Repair for the latest status."
+          ].filter(Boolean).join("\n")
+        : "I couldn’t create the repair ticket right now. Please tap Talk to Human or try again shortly.",
       reply_markup: {
         inline_keyboard: ticket ? [
           [{ text: "📍 Track Repair", callback_data: `repair_status:${ticket.referenceCode}` }],
-          [{ text: "🛠 Browse Repair Services", web_app: { url: serviceUrl.toString() } }],
           [{ text: "👤 Talk to Human", callback_data: "human_support" }]
         ] : [
           [{ text: "👤 Talk to Human", callback_data: "human_support" }]
@@ -1411,14 +1416,11 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
   } else if (command === "/shop") {
     await send({ text: "📱 Browse Mr Mobiles phones and accessories:", reply_markup: keyboard("Browse Shop") });
   } else if (command === "/repair") {
-    const serviceUrl = new URL(versionedMiniAppUrl(context.appUrl));
-    serviceUrl.searchParams.set("category", "service");
     await send({
-      text: "🛠️ Repair Help\n\nStart a guided diagnosis here. You can reply with brand/model/problem or attach a device photo with that caption. Final diagnosis and pricing are confirmed after inspection.",
+      text: "🛠 Repair\n\nTap Start Diagnosis, then send brand + exact model + problem in one message.",
       reply_markup: {
         inline_keyboard: [
-          [{ text: "🧰 Start Diagnosis", callback_data: "repair_start" }],
-          [{ text: "🛠 Browse Repair Services", web_app: { url: serviceUrl.toString() } }]
+          [{ text: "Start Diagnosis", callback_data: "repair_start" }]
         ]
       }
     });
