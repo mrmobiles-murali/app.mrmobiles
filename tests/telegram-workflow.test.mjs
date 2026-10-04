@@ -170,8 +170,8 @@ test("repair callback starts a guided force-reply flow", async () => {
   await handleBotUpdate(callback("repair_start"), ctx);
   assert.equal(calls[0].method, "answerCallbackQuery");
   assert.equal(calls[1].body.reply_markup.force_reply, true);
-  assert.match(calls[1].body.text, /Brand/);
-  assert.match(calls[1].body.text, /Exact model/);
+  assert.match(calls[1].body.text, /brand/i);
+  assert.match(calls[1].body.text, /exact model/i);
 });
 
 test("guided repair reply bypasses generic AI and forwards the exact details", async () => {
