@@ -848,3 +848,26 @@ test("repairupdate cannot manually bypass confirmed quote payment", async () => 
   assert.equal(updated, false);
   assert.equal(calls.some(call => /only after the approved quote payment/i.test(String(call.body?.text || ""))), true);
 });
+
+
+test("repairupdate cannot roll a paid repair backward", async () => {
+  let updated = false;
+  const { ctx, calls } = context({
+    adminRepairTicket: async referenceCode => ({
+      reference_code: referenceCode,
+      telegram_user_id: 42,
+      device_model: "S23",
+      status: "repairing"
+    }),
+    repairUpdate: async () => {
+      updated = true;
+      return true;
+    }
+  });
+  await handleBotUpdate(message(
+    "/repairupdate MRR-ABCDEF1234 awaiting_approval stale",
+    { from: { id: 99, first_name: "Admin" } }
+  ), ctx);
+  assert.equal(updated, false);
+  assert.equal(calls.some(call => /cannot move from repairing to awaiting_approval/i.test(String(call.body?.text || ""))), true);
+});
