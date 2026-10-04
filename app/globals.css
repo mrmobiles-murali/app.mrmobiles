@@ -953,3 +953,67 @@ input,
     padding: 15px;
   }
 }
+
+
+/* Premium typography & brand wordmark */
+.hero h1,
+.catalogHeading h2,
+.card h2,
+.customPaymentHeading h2,
+.aiHeader strong,
+.brandMark {
+  font-family: var(--font-sora), var(--font-manrope), system-ui, sans-serif;
+}
+
+.hero h1 {
+  font-weight: 700;
+  letter-spacing: -.06em;
+}
+
+.catalogHeading h2,
+.card h2,
+.customPaymentHeading h2 {
+  font-weight: 650;
+}
+
+.brandMark {
+  width: 72px;
+  height: 72px;
+  flex: 0 0 72px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 1px;
+  border-radius: 22px;
+  background:
+    linear-gradient(145deg, rgba(255,138,61,.13), rgba(255,191,94,.035)),
+    var(--panel);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.05),
+    0 18px 40px rgba(0,0,0,.24);
+}
+
+.brandMark span {
+  background: linear-gradient(110deg, #ff8a3d 5%, #ffbd63 48%, #f4f7fb 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  font-size: 1.22rem;
+  font-weight: 800;
+  letter-spacing: -.06em;
+  line-height: 1;
+}
+
+.brandMark small {
+  color: var(--muted);
+  font-family: var(--font-manrope), system-ui, sans-serif;
+  font-size: .46rem;
+  font-weight: 800;
+  letter-spacing: .18em;
+}
+
+.eyebrow,
+.pill,
+.visualBadge {
+  font-family: var(--font-manrope), system-ui, sans-serif;
+}
