@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { analyzeRepairPhoto, answerBusinessQuestion, aiRuntimeConfigured } from "@/lib/business-ai";
 import { getInventoryProductsByIds, searchInventoryProducts } from "@/lib/server-catalog";
-import { approveRepairQuote, createTelegramRepairTicket, getTelegramRepairTicket, listTelegramRepairTickets, REPAIR_STATUSES, updateRepairTicket } from "@/lib/repair-tickets";
+import { approveRepairQuote, cancelTelegramRepairTicket, createTelegramRepairTicket, getTelegramRepairTicket, listTelegramRepairTickets, REPAIR_STATUSES, updateRepairTicket } from "@/lib/repair-tickets";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { adminIds, BOT_COMMANDS, BOT_WORKFLOW_VERSION, derivedWebhookSecret, handleBotUpdate, matchesSecret, miniAppUrl, versionedMiniAppUrl, repairRushGameUrl, isRepairRushUpdate, REPAIR_RUSH_SHORT_NAME, REPAIR_RUSH_BOT_USERNAME } from "@/lib/telegram-workflow";
 
@@ -24,10 +24,17 @@ function settings(request: NextRequest) {
   };
 }
 
-function repairAdminKeyboard(referenceCode: string, userId?: number) {
-  const rows: Array<Array<Record<string, string>>> = [
-    [{ text: "🛠 Open Repair Ticket", callback_data: `admin_ticket:${referenceCode}` }]
-  ];
+function repairAdminKeyboard(referenceCode: string, userId?: number, status = "received") {
+  const rows: Array<Array<Record<string, string>>> = [];
+
+  if (status === "received") {
+    rows.push([
+      { text: "✅ Accept", callback_data: `repair_admin:${referenceCode}:reviewing` },
+      { text: "❌ Decline", callback_data: `repair_admin:${referenceCode}:rejected` }
+    ]);
+  }
+
+  rows.push([{ text: "🛠 Open Repair Ticket", callback_data: `admin_ticket:${referenceCode}` }]);
 
   if (Number.isSafeInteger(userId) && Number(userId) > 0) {
     rows.push([
@@ -97,6 +104,8 @@ function status(request: NextRequest) {
     repairIntakeRouting: true,
     repairTicketLifecycle: true,
     repairQuoteApproval: true,
+    customerRepairCancellation: true,
+    adminRepairAcceptDecline: true,
     homeDashboard: true,
     paymentLifecycleNotifications: true,
     profileSelfHeal: true,
@@ -405,6 +414,33 @@ export async function POST(request: NextRequest) {
       async repairStatus(userId, referenceCode) {
         return getTelegramRepairTicket(userId, referenceCode);
       },
+      async cancelRepair(userId, referenceCode) {
+        const ticket = await cancelTelegramRepairTicket(userId, referenceCode);
+        if (!ticket) return false;
+
+        if (
+          config.supportChatId &&
+          config.admins.length &&
+          Number(config.supportChatId) !== Number(userId)
+        ) {
+          try {
+            await callTelegram("sendMessage", {
+              chat_id: config.supportChatId,
+              text: [
+                "🚫 Customer cancelled repair",
+                `Reference: ${ticket.reference_code}`,
+                `Customer ID: ${userId}`,
+                "Status: cancelled"
+              ].join("\n"),
+              reply_markup: repairAdminKeyboard(ticket.reference_code, userId, "cancelled")
+            });
+          } catch {
+            // Cancellation is already stored even if the admin notice fails.
+          }
+        }
+
+        return true;
+      },
       async repairUpdate(referenceCode, status, note) {
         if (!REPAIR_STATUSES.includes(status as any)) return false;
         const ticket = await updateRepairTicket({
@@ -454,10 +490,13 @@ export async function POST(request: NextRequest) {
                 "Approve only if you want Mr Mobiles to proceed."
               ].filter(Boolean).join("\n"),
               reply_markup: {
-                inline_keyboard: [[
-                  { text: "✅ Approve Quote", callback_data: `repair_approve:${ticket.reference_code}` },
-                  { text: "👤 Talk to Human", callback_data: "human_support" }
-                ]]
+                inline_keyboard: [
+                  [
+                    { text: "✅ Approve Quote", callback_data: `repair_approve:${ticket.reference_code}` },
+                    { text: "🚫 Cancel", callback_data: `repair_cancel_prompt:${ticket.reference_code}` }
+                  ],
+                  [{ text: "👤 Talk to Human", callback_data: "human_support" }]
+                ]
               }
             });
           } catch {
@@ -482,7 +521,7 @@ export async function POST(request: NextRequest) {
                 "",
                 "Tap the next repair action below."
               ].join("\n"),
-              reply_markup: repairAdminKeyboard(ticket.reference_code, userId)
+              reply_markup: repairAdminKeyboard(ticket.reference_code, userId, "approved")
             });
           } catch {
             // Approval is already stored.
