@@ -115,6 +115,8 @@ function status(request: NextRequest) {
     technicianAssignment: true,
     repairSlaTracking: true,
     serviceWarranties: true,
+    secureOrderReceipts: true,
+    printableReceiptPdf: true,
     inventoryAdminControls: true,
     generatedCatalogVisuals: true,
     inventorySource: "supabase",
