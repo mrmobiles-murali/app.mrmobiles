@@ -2,16 +2,13 @@ import { ImageResponse } from "next/og";
 
 export const runtime = "edge";
 
-function clean(value: string | null, max = 80) {
+function clean(value: string | null, max = 8) {
   return (value || "").replace(/[<>]/g, "").slice(0, max);
 }
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
-  const name = clean(url.searchParams.get("name")) || "Mr Mobiles";
-  const price = clean(url.searchParams.get("price"), 40);
-  const stock = clean(url.searchParams.get("stock"), 50);
-  const emoji = clean(url.searchParams.get("emoji"), 8) || "📱";
+  const emoji = clean(url.searchParams.get("emoji")) || "📱";
 
   return new ImageResponse(
     (
@@ -19,23 +16,68 @@ export async function GET(request: Request) {
         style={{
           width: "100%",
           height: "100%",
+          position: "relative",
           display: "flex",
-          flexDirection: "column",
-          justifyContent: "space-between",
-          padding: 44,
-          background: "linear-gradient(135deg, #0b0d10 0%, #151a21 55%, #0f766e 140%)",
-          color: "white",
-          fontFamily: "sans-serif"
+          alignItems: "center",
+          justifyContent: "center",
+          overflow: "hidden",
+          background: "linear-gradient(145deg, #11161d 0%, #090c10 58%, #172129 100%)",
+          color: "white"
         }}
       >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div style={{ fontSize: 24, fontWeight: 700, letterSpacing: 1 }}>Mr Mobiles</div>
-          <div style={{ fontSize: 56 }}>{emoji}</div>
+        <div
+          style={{
+            position: "absolute",
+            width: 360,
+            height: 360,
+            left: -80,
+            top: -120,
+            borderRadius: 999,
+            background: "rgba(255,138,61,.20)",
+            filter: "blur(18px)"
+          }}
+        />
+        <div
+          style={{
+            position: "absolute",
+            width: 300,
+            height: 300,
+            right: -120,
+            bottom: -150,
+            borderRadius: 999,
+            background: "rgba(33,167,183,.18)",
+            filter: "blur(20px)"
+          }}
+        />
+        <div
+          style={{
+            width: 190,
+            height: 190,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            border: "1px solid rgba(255,255,255,.08)",
+            borderRadius: 48,
+            background: "rgba(255,255,255,.035)",
+            boxShadow: "0 30px 80px rgba(0,0,0,.38)",
+            fontSize: 104
+          }}
+        >
+          {emoji}
         </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <div style={{ fontSize: 38, fontWeight: 800, lineHeight: 1.1 }}>{name}</div>
-          <div style={{ fontSize: 26, fontWeight: 700 }}>{price}</div>
-          <div style={{ fontSize: 18, opacity: 0.8 }}>{stock}</div>
+        <div
+          style={{
+            position: "absolute",
+            left: 34,
+            bottom: 28,
+            display: "flex",
+            fontSize: 18,
+            fontWeight: 700,
+            letterSpacing: 1.6,
+            color: "rgba(255,255,255,.72)"
+          }}
+        >
+          MR MOBILES
         </div>
       </div>
     ),
@@ -43,7 +85,7 @@ export async function GET(request: Request) {
       width: 640,
       height: 360,
       headers: {
-        "Cache-Control": "public, max-age=300, stale-while-revalidate=3600"
+        "Cache-Control": "public, max-age=60, stale-while-revalidate=300"
       }
     }
   );
