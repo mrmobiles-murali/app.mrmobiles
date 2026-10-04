@@ -158,7 +158,15 @@ export function GET(request: NextRequest) {
 
 class TelegramError extends Error {
   code: number;
-  constructor(code: number) { super(`Telegram API failed (${code}).`); this.code = code; }
+  method: string;
+  telegramDescription: string;
+
+  constructor(code: number, method: string, description = "") {
+    super(`Telegram API failed (${code}) in ${method}.`);
+    this.code = code;
+    this.method = method;
+    this.telegramDescription = description;
+  }
 }
 
 async function claimTelegramUpdate(update: unknown): Promise<number | null> {
@@ -261,7 +269,9 @@ export async function POST(request: NextRequest) {
       });
       const data = await response.json();
       if (!response.ok || data?.ok !== true) {
-        throw new TelegramError(Number(data?.error_code || response.status));
+        const rawDescription = typeof data?.description === "string" ? data.description : "";
+        const safeDescription = rawDescription.replaceAll(token, "[redacted]").slice(0, 240);
+        throw new TelegramError(Number(data?.error_code || response.status), "setWebhook", safeDescription);
       }
     }
 
@@ -276,7 +286,11 @@ export async function POST(request: NextRequest) {
         body: JSON.stringify(businessAwareBody), cache: "no-store", signal: AbortSignal.timeout(12000)
       });
       const data = await response.json();
-      if (!response.ok || data?.ok !== true) throw new TelegramError(Number(data?.error_code || response.status));
+      if (!response.ok || data?.ok !== true) {
+        const rawDescription = typeof data?.description === "string" ? data.description : "";
+        const safeDescription = rawDescription.replaceAll(token, "[redacted]").slice(0, 240);
+        throw new TelegramError(Number(data?.error_code || response.status), method, safeDescription);
+      }
       return data.result;
     };
 
@@ -760,7 +774,9 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     // Fetch exceptions can contain the bot token in their URLs: never log them.
     const code = error instanceof TelegramError ? error.code : 0;
-    console.error("Telegram workflow request failed", { code });
+    const method = error instanceof TelegramError ? error.method : "internal";
+    const description = error instanceof TelegramError ? error.telegramDescription : "";
+    console.error("Telegram workflow request failed", { code, method, description });
     if (code === 400 || code === 403) {
       return NextResponse.json({ ok: true, deliveryFailed: true });
     }
