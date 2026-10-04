@@ -7,7 +7,10 @@ import {
   verifyPaymentSignature
 } from "@/lib/razorpay";
 import { sendTelegramMessage } from "@/lib/telegram-bot";
-import { advanceRepairAfterPaidOrder } from "@/lib/repair-payment-server";
+import {
+  advanceRepairAfterPaidOrder,
+  repairPaymentWorkflowIsActive
+} from "@/lib/repair-payment-server";
 
 function cleanReason(value: unknown) {
   return String(value || "Payment failed.").replace(/[\r\n\t]+/g, " ").trim().slice(0, 500);
@@ -183,7 +186,11 @@ export async function POST(request: NextRequest) {
           `Order: <code>${order.id}</code>`,
           `Payment: <code>${paymentId}</code>`,
           "Status: <b>Paid & confirmed</b>",
-          repair?.referenceCode ? "Repair status: <b>In progress</b>" : "",
+          repairPaymentWorkflowIsActive(repair)
+            ? "Repair status: <b>In progress</b>"
+            : repair?.referenceCode
+              ? "Repair status: <b>Payment confirmed; workflow sync pending</b>"
+              : "",
           "",
           "Securely processed via mrmobiles.in.",
           "Thank you for choosing Mr Mobiles 💙"

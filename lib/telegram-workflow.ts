@@ -486,16 +486,33 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
       /^repair_admin:(MRR-[A-F0-9]{10}):(diagnosing|repairing|ready|completed)$/i
     );
     const quotePromptMatch = callbackData.match(/^repair_quote_prompt:(MRR-[A-F0-9]{10})$/i);
+    const adminTicketMatch = callbackData.match(/^admin_ticket:(MRR-[A-F0-9]{10})$/i);
     const assignPromptMatch = callbackData.match(/^repair_assign_prompt:(MRR-[A-F0-9]{10})$/i);
     const slaPromptMatch = callbackData.match(/^repair_sla_prompt:(MRR-[A-F0-9]{10})$/i);
     const warrantyPromptMatch = callbackData.match(/^warranty_prompt:(MRR-[A-F0-9]{10})$/i);
     const warrantyQuickMatch = callbackData.match(/^warranty_quick:(MRR-[A-F0-9]{10}):(30|90|180)$/i);
 
-    if (repairActionMatch || quotePromptMatch || assignPromptMatch || slaPromptMatch || warrantyPromptMatch || warrantyQuickMatch) {
+    if (adminTicketMatch || repairActionMatch || quotePromptMatch || assignPromptMatch || slaPromptMatch || warrantyPromptMatch || warrantyQuickMatch) {
       if (!context.admins.includes(adminId)) {
         await safeAnswerCallback(context, callbackQuery.id, "This action is for the Mr Mobiles support team.");
         return;
       }
+    }
+
+    if (adminTicketMatch) {
+      const referenceCode = adminTicketMatch[1].toUpperCase();
+      const ticket = context.adminRepairTicket
+        ? await context.adminRepairTicket(referenceCode)
+        : null;
+      await safeAnswerCallback(context, callbackQuery.id, ticket ? "Repair ticket opened." : "Repair ticket not found.");
+      if (ticket) {
+        await context.call("sendMessage", {
+          chat_id: callbackChatId,
+          text: adminRepairText(ticket),
+          reply_markup: adminTicketKeyboard(ticket)
+        });
+      }
+      return;
     }
 
     if (repairActionMatch) {
@@ -624,6 +641,24 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
 
     if (quotePromptMatch) {
       const referenceCode = quotePromptMatch[1].toUpperCase();
+      const ticket = context.adminRepairTicket
+        ? await context.adminRepairTicket(referenceCode)
+        : null;
+      const quoteEditable = !context.adminRepairTicket ||
+        Boolean(ticket && ["diagnosing", "awaiting_approval"].includes(String(ticket.status || "")));
+
+      if (!quoteEditable) {
+        await safeAnswerCallback(context, callbackQuery.id, ticket ? `Current status is ${ticket.status}.` : "Repair ticket not found.");
+        if (ticket) {
+          await context.call("sendMessage", {
+            chat_id: callbackChatId,
+            text: `⚠️ ${referenceCode} cannot be quoted from ${ticket.status}. Refresh the repair ticket.`,
+            reply_markup: adminTicketKeyboard(ticket)
+          });
+        }
+        return;
+      }
+
       await safeAnswerCallback(context, callbackQuery.id, "Quote reference added automatically.");
       await context.call("sendMessage", {
         chat_id: callbackChatId,
@@ -753,26 +788,6 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
         text: adminDashboardText(dashboard),
         reply_markup: { inline_keyboard: rows }
       });
-      return;
-    }
-
-    if (data.startsWith("admin_ticket:")) {
-      if (!context.admins.includes(userId)) {
-        await safeAnswerCallback(context, callbackQuery.id, "This action is for the Mr Mobiles support team.");
-        return;
-      }
-      const referenceCode = data.slice("admin_ticket:".length).toUpperCase();
-      const ticket = /^MRR-[A-F0-9]{10}$/.test(referenceCode) && context.adminRepairTicket
-        ? await context.adminRepairTicket(referenceCode)
-        : null;
-      await safeAnswerCallback(context, callbackQuery.id, ticket ? "Repair ticket opened." : "Repair ticket not found.");
-      if (ticket) {
-        await context.call("sendMessage", {
-          chat_id: chatId,
-          text: adminRepairText(ticket),
-          reply_markup: adminTicketKeyboard(ticket)
-        });
-      }
       return;
     }
 
@@ -1092,6 +1107,20 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
 
     if (quoteTargetMatch && context.admins.includes(senderId) && adminReply && !adminReply.startsWith("/")) {
       const referenceCode = quoteTargetMatch[1].toUpperCase();
+      const ticket = context.adminRepairTicket
+        ? await context.adminRepairTicket(referenceCode)
+        : null;
+      if (context.adminRepairTicket && (!ticket || !["diagnosing", "awaiting_approval"].includes(String(ticket.status || "")))) {
+        await context.call("sendMessage", {
+          chat_id: message.chat.id,
+          text: ticket
+            ? `⚠️ ${referenceCode} is now ${ticket.status}; this quote prompt is stale. Open the repair ticket and try again.`
+            : `⚠️ Repair ticket ${referenceCode} was not found.`,
+          ...(ticket ? { reply_markup: adminTicketKeyboard(ticket) } : {})
+        });
+        return;
+      }
+
       const quoteMatch = adminReply.match(/^(\d{2,7})(?:\s+([\s\S]+))?$/);
       const rupees = Number(quoteMatch?.[1]);
 
@@ -1435,10 +1464,47 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
       await send({ text: "Usage: /repairupdate MRR-XXXXXXXXXX STATUS optional note" });
       return;
     }
+    const referenceCode = match[1].toUpperCase();
+    const requestedStatus = match[2].toLowerCase();
+    const ticket = context.adminRepairTicket
+      ? await context.adminRepairTicket(referenceCode)
+      : null;
+
+    if (context.adminRepairTicket && !ticket) {
+      await send({ text: "Repair update failed or the reference was not found." });
+      return;
+    }
+    if (context.adminRepairTicket && requestedStatus === "repairing" && ticket?.status !== "repairing") {
+      await send({ text: `💳 ${referenceCode} moves to repairing only after the approved quote payment is confirmed.` });
+      return;
+    }
+
+    if (ticket && requestedStatus !== ticket.status) {
+      const allowedTransitions: Record<string, string[]> = {
+        received: ["reviewing", "diagnosing", "rejected", "cancelled"],
+        reviewing: ["diagnosing", "rejected", "cancelled"],
+        diagnosing: ["rejected", "cancelled"],
+        awaiting_approval: ["rejected", "cancelled"],
+        approved: ["rejected", "cancelled"],
+        repairing: ["ready", "cancelled"],
+        ready: ["completed"],
+        completed: [],
+        rejected: [],
+        cancelled: []
+      };
+      const allowed = allowedTransitions[String(ticket.status || "")] || [];
+      if (!allowed.includes(requestedStatus)) {
+        await send({
+          text: `⚠️ ${referenceCode} cannot move from ${ticket.status} to ${requestedStatus}. Use the repair controls for the next valid step.`
+        });
+        return;
+      }
+    }
+
     const ok = context.repairUpdate
-      ? await context.repairUpdate(match[1].toUpperCase(), match[2].toLowerCase(), (match[3] || "").trim())
+      ? await context.repairUpdate(referenceCode, requestedStatus, (match[3] || "").trim())
       : false;
-    await send({ text: ok ? `✅ Repair ${match[1].toUpperCase()} updated to ${match[2].toLowerCase()}.` : "Repair update failed or the reference was not found." });
+    await send({ text: ok ? `✅ Repair ${referenceCode} updated to ${requestedStatus}.` : "Repair update failed or the reference was not found." });
   } else if (command === "/repairquote") {
     if (!isAdmin) {
       await send({ text: "This command is available to the Mr Mobiles support team." });
@@ -1450,10 +1516,23 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
       await send({ text: "Usage: /repairquote MRR-XXXXXXXXXX AMOUNT optional note" });
       return;
     }
+    const referenceCode = match[1].toUpperCase();
+    const ticket = context.adminRepairTicket
+      ? await context.adminRepairTicket(referenceCode)
+      : null;
+    if (context.adminRepairTicket && (!ticket || !["diagnosing", "awaiting_approval"].includes(String(ticket.status || "")))) {
+      await send({
+        text: ticket
+          ? `⚠️ ${referenceCode} is ${ticket.status}; quote changes are allowed only while diagnosing or awaiting approval.`
+          : "Repair quote failed or the reference was not found."
+      });
+      return;
+    }
+
     const ok = context.repairQuote
-      ? await context.repairQuote(match[1].toUpperCase(), Math.round(rupees * 100), (match[3] || "").trim())
+      ? await context.repairQuote(referenceCode, Math.round(rupees * 100), (match[3] || "").trim())
       : false;
-    await send({ text: ok ? `✅ Quote sent for ${match[1].toUpperCase()}: ${formatInr(Math.round(rupees * 100))}` : "Repair quote failed or the reference was not found." });
+    await send({ text: ok ? `✅ Quote sent for ${referenceCode}: ${formatInr(Math.round(rupees * 100))}` : "Repair quote failed or the reference was not found." });
   } else if (command === "/reply") {
     if (!isAdmin) {
       await send({ text: "This command is available to the Mr Mobiles support team." });

@@ -8,7 +8,7 @@ import { createPaymentBridgeToken } from "@/lib/payment-bridge";
 import {
   createRepairPaymentCartItem,
   normalizeRepairReference,
-  repairReferenceFromCart
+  repairPaymentReservationId
 } from "@/lib/repair-payment";
 
 export async function POST(request: NextRequest) {
@@ -112,46 +112,45 @@ export async function POST(request: NextRequest) {
       .eq("status", "creating_payment")
       .lt("updated_at", staleCutoff);
 
-    if (repairTicket) {
-      const { data: recentRepairOrders, error: priorError } = await supabase
+    const repairReservationId = repairTicket
+      ? repairPaymentReservationId(user.id, repairTicket.reference_code, priced.amountPaise)
+      : null;
+
+    let reservedOrderRow: { id: string } | null = null;
+
+    if (repairTicket && repairReservationId) {
+      const { data: existingRepairOrder, error: priorError } = await supabase
         .from("orders")
-        .select("id,amount_paise,status,razorpay_order_id,cart")
+        .select("id,amount_paise,status,razorpay_order_id,razorpay_payment_id,cart")
+        .eq("id", repairReservationId)
         .eq("telegram_user_id", user.id)
-        .order("created_at", { ascending: false })
-        .limit(25);
+        .maybeSingle();
 
       if (priorError) throw new Error("Could not verify previous repair payments.");
 
-      const matching = (recentRepairOrders || []).filter((candidate) =>
-        repairReferenceFromCart(candidate.cart) === repairTicket?.reference_code &&
-        Number(candidate.amount_paise) === priced.amountPaise
-      );
-
-      if (matching.some((candidate) => candidate.status === "paid")) {
+      if (existingRepairOrder?.status === "paid") {
         throw new Error("This repair quote is already paid.");
       }
 
-      const resumable = matching.find((candidate) =>
-        Boolean(candidate.razorpay_order_id) &&
-        ["created", "payment_pending"].includes(String(candidate.status))
-      );
-
-      if (resumable?.razorpay_order_id) {
+      if (
+        existingRepairOrder?.razorpay_order_id &&
+        ["created", "payment_pending", "payment_capture_failed"].includes(String(existingRepairOrder.status))
+      ) {
         const keyId = process.env.RAZORPAY_KEY_ID;
         if (!keyId) throw new Error("Razorpay API credentials are missing.");
         const bridgeToken = createPaymentBridgeToken({
-          internalOrderId: resumable.id,
-          razorpayOrderId: resumable.razorpay_order_id,
+          internalOrderId: existingRepairOrder.id,
+          razorpayOrderId: existingRepairOrder.razorpay_order_id,
           telegramUserId: user.id
         });
 
         return NextResponse.json({
           ok: true,
           keyId,
-          orderId: resumable.razorpay_order_id,
+          orderId: existingRepairOrder.razorpay_order_id,
           amount: priced.amountPaise,
           currency: "INR",
-          internalOrderId: resumable.id,
+          internalOrderId: existingRepairOrder.id,
           customPayment: false,
           repairPayment: true,
           repairReference: repairTicket.reference_code,
@@ -159,6 +158,41 @@ export async function POST(request: NextRequest) {
           bridgeUrl: process.env.PAYMENT_BRIDGE_URL || "https://mrmobiles.in/pay",
           bridgeToken
         });
+      }
+
+      if (existingRepairOrder?.status === "creating_payment") {
+        throw new Error("Repair payment setup is already in progress. Please retry in a moment.");
+      }
+
+      if (["signature_failed", "payment_mismatch"].includes(String(existingRepairOrder?.status || ""))) {
+        throw new Error("A previous repair payment needs verification. Please contact Mr Mobiles support.");
+      }
+
+      if (existingRepairOrder) {
+        const { data: claimed, error: claimError } = await supabase
+          .from("orders")
+          .update({
+            amount_paise: priced.amountPaise,
+            currency: "INR",
+            status: "creating_payment",
+            workflow_status: "payment_processing",
+            workflow_note: `Creating secure payment for repair ${repairTicket.reference_code}.`,
+            cart: priced.items,
+            razorpay_order_id: null,
+            razorpay_payment_id: null,
+            paid_at: null,
+            updated_at: new Date().toISOString()
+          })
+          .eq("id", existingRepairOrder.id)
+          .eq("status", existingRepairOrder.status)
+          .select("id")
+          .maybeSingle();
+
+        if (claimError) throw new Error(claimError.message);
+        if (!claimed) {
+          throw new Error("Repair payment setup is already in progress. Please retry in a moment.");
+        }
+        reservedOrderRow = claimed;
       }
     }
 
@@ -169,22 +203,67 @@ export async function POST(request: NextRequest) {
         ? "Creating secure custom payment checkout."
         : "Creating secure Razorpay checkout.";
 
-    const { data: orderRow, error: insertError } = await supabase
-      .from("orders")
-      .insert({
-        telegram_user_id: user.id,
-        telegram_username: user.username ?? null,
-        amount_paise: priced.amountPaise,
-        currency: "INR",
-        status: "creating_payment",
-        workflow_status: "payment_processing",
-        workflow_note: workflowNote,
-        cart: priced.items
-      })
-      .select("id")
-      .single();
+    let orderRow: { id: string } | null = reservedOrderRow;
 
-    if (insertError || !orderRow) throw new Error(insertError?.message || "Could not create order.");
+    if (!orderRow) {
+      const { data: insertedOrder, error: insertError } = await supabase
+        .from("orders")
+        .insert({
+          ...(repairReservationId ? { id: repairReservationId } : {}),
+          telegram_user_id: user.id,
+          telegram_username: user.username ?? null,
+          amount_paise: priced.amountPaise,
+          currency: "INR",
+          status: "creating_payment",
+          workflow_status: "payment_processing",
+          workflow_note: workflowNote,
+          cart: priced.items
+        })
+        .select("id")
+        .single();
+
+      if (insertError || !insertedOrder) {
+        if (repairReservationId && insertError?.code === "23505") {
+          const { data: winner } = await supabase
+            .from("orders")
+            .select("id,status,razorpay_order_id")
+            .eq("id", repairReservationId)
+            .eq("telegram_user_id", user.id)
+            .maybeSingle();
+
+          if (winner?.status === "paid") {
+            throw new Error("This repair quote is already paid.");
+          }
+          if (winner?.razorpay_order_id) {
+            const keyId = process.env.RAZORPAY_KEY_ID;
+            if (!keyId) throw new Error("Razorpay API credentials are missing.");
+            const bridgeToken = createPaymentBridgeToken({
+              internalOrderId: winner.id,
+              razorpayOrderId: winner.razorpay_order_id,
+              telegramUserId: user.id
+            });
+            return NextResponse.json({
+              ok: true,
+              keyId,
+              orderId: winner.razorpay_order_id,
+              amount: priced.amountPaise,
+              currency: "INR",
+              internalOrderId: winner.id,
+              customPayment: false,
+              repairPayment: true,
+              repairReference: repairTicket?.reference_code || null,
+              resumed: true,
+              bridgeUrl: process.env.PAYMENT_BRIDGE_URL || "https://mrmobiles.in/pay",
+              bridgeToken
+            });
+          }
+          throw new Error("Repair payment setup is already in progress. Please retry in a moment.");
+        }
+        throw new Error(insertError?.message || "Could not create order.");
+      }
+
+      orderRow = insertedOrder;
+    }
 
     let razorpayResult;
     try {

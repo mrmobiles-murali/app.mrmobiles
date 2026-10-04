@@ -45,3 +45,10 @@ export async function advanceRepairAfterPaidOrder(input: {
     status: ticket.status
   };
 }
+
+
+export function repairPaymentWorkflowIsActive(
+  repair: { status?: string | null } | null | undefined
+): boolean {
+  return Boolean(repair && ["repairing", "ready", "completed"].includes(String(repair.status || "")));
+}

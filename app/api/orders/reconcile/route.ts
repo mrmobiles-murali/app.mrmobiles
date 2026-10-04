@@ -7,7 +7,10 @@ import {
   type RazorpayPayment
 } from "@/lib/razorpay";
 import { sendTelegramMessage } from "@/lib/telegram-bot";
-import { advanceRepairAfterPaidOrder } from "@/lib/repair-payment-server";
+import {
+  advanceRepairAfterPaidOrder,
+  repairPaymentWorkflowIsActive
+} from "@/lib/repair-payment-server";
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,19 +18,40 @@ export async function POST(request: NextRequest) {
     const { user } = validateTelegramInitData(initData);
     const supabase = getSupabaseAdmin();
 
-    const { data: orders, error } = await supabase
-      .from("orders")
-      .select("id, telegram_user_id, amount_paise, currency, razorpay_order_id, status, cart")
-      .eq("telegram_user_id", user.id)
-      .neq("status", "paid")
-      .not("razorpay_order_id", "is", null)
-      .order("created_at", { ascending: false })
-      .limit(10);
+    const [{ data: orders, error }, { data: paidOrders, error: paidError }] = await Promise.all([
+      supabase
+        .from("orders")
+        .select("id, telegram_user_id, amount_paise, currency, razorpay_order_id, status, cart")
+        .eq("telegram_user_id", user.id)
+        .neq("status", "paid")
+        .not("razorpay_order_id", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(10),
+      supabase
+        .from("orders")
+        .select("id, telegram_user_id, amount_paise, currency, razorpay_order_id, status, cart")
+        .eq("telegram_user_id", user.id)
+        .eq("status", "paid")
+        .not("razorpay_order_id", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(25)
+    ]);
 
     if (error) throw new Error(error.message);
+    if (paidError) throw new Error(paidError.message);
 
     let reconciled = 0;
+    let repairsAdvanced = 0;
     const paidOrderIds: string[] = [];
+
+    for (const paidOrder of paidOrders || []) {
+      const repair = await advanceRepairAfterPaidOrder({
+        telegramUserId: user.id,
+        amountPaise: Number(paidOrder.amount_paise),
+        cart: paidOrder.cart
+      });
+      if (repair?.advanced) repairsAdvanced += 1;
+    }
 
     for (const order of orders || []) {
       if (!order.razorpay_order_id) continue;
@@ -106,7 +130,11 @@ export async function POST(request: NextRequest) {
             repair?.referenceCode ? `Repair: <code>${repair.referenceCode}</code>` : "",
             `Order: <code>${order.id}</code>`,
             `Payment: <code>${captured.id}</code>`,
-            repair?.referenceCode ? "Repair status: <b>In progress</b>" : "",
+            repairPaymentWorkflowIsActive(repair)
+              ? "Repair status: <b>In progress</b>"
+              : repair?.referenceCode
+                ? "Repair status: <b>Payment confirmed; workflow sync pending</b>"
+                : "",
             "",
             "Thank you for choosing Mr Mobiles."
           ].filter(Boolean).join("\n"),
@@ -122,7 +150,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ ok: true, reconciled, paidOrderIds });
+    return NextResponse.json({ ok: true, reconciled, repairsAdvanced, paidOrderIds });
   } catch (error) {
     return NextResponse.json(
       { ok: false, error: error instanceof Error ? error.message : "Could not refresh payment status." },

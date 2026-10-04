@@ -3,7 +3,10 @@ import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { verifyWebhookSignature } from "@/lib/razorpay";
 import { sendTelegramMessage } from "@/lib/telegram-bot";
 import { addWorkflowEvent } from "@/lib/web-automation";
-import { advanceRepairAfterPaidOrder } from "@/lib/repair-payment-server";
+import {
+  advanceRepairAfterPaidOrder,
+  repairPaymentWorkflowIsActive
+} from "@/lib/repair-payment-server";
 
 export async function POST(request: NextRequest) {
   try {
@@ -38,8 +41,10 @@ export async function POST(request: NextRequest) {
     }
 
     if (event === "order.paid" || event === "payment.captured") {
+      let transitioned = false;
+
       if (order.status !== "paid") {
-        const { data: transitioned, error: updateError } = await supabase
+        const { data: updated, error: updateError } = await supabase
           .from("orders")
           .update({
             status: "paid",
@@ -54,6 +59,7 @@ export async function POST(request: NextRequest) {
           .maybeSingle();
 
         if (updateError) throw new Error(updateError.message);
+        transitioned = Boolean(updated);
 
         if (transitioned && order.source === "web" && order.tracking_code) {
           await addWorkflowEvent({
@@ -64,35 +70,42 @@ export async function POST(request: NextRequest) {
             message: "Payment received. Your order is confirmed."
           });
         }
+      }
 
-        if (transitioned && order.telegram_user_id) {
-          const repair = await advanceRepairAfterPaidOrder({
+      const repair = order.telegram_user_id
+        ? await advanceRepairAfterPaidOrder({
             telegramUserId: Number(order.telegram_user_id),
             amountPaise: Number(order.amount_paise || 0),
             cart: order.cart
-          });
-          await sendTelegramMessage(
-            Number(order.telegram_user_id),
-            [
-              "✅ <b>Payment received</b>",
-              repair?.referenceCode ? `Repair: <code>${repair.referenceCode}</code>` : "",
-              `Order: <code>${order.id}</code>`,
-              paymentId ? `Payment: <code>${paymentId}</code>` : "",
-              "Status: <b>confirmed</b>",
-              repair?.referenceCode ? "Repair status: <b>In progress</b>" : "",
-              "",
-              "Use /orders anytime to check your order. Thank you for choosing Mr Mobiles."
-            ].filter(Boolean).join("\n"),
-            repair?.referenceCode ? {
-              replyMarkup: {
-                inline_keyboard: [
-                  [{ text: "📍 Track Repair", callback_data: `repair_status:${repair.referenceCode}` }],
-                  [{ text: "👤 My Account", callback_data: "account_summary" }]
-                ]
-              }
-            } : undefined
-          );
-        }
+          })
+        : null;
+
+      if (transitioned && order.telegram_user_id) {
+        await sendTelegramMessage(
+          Number(order.telegram_user_id),
+          [
+            "✅ <b>Payment received</b>",
+            repair?.referenceCode ? `Repair: <code>${repair.referenceCode}</code>` : "",
+            `Order: <code>${order.id}</code>`,
+            paymentId ? `Payment: <code>${paymentId}</code>` : "",
+            "Status: <b>confirmed</b>",
+            repairPaymentWorkflowIsActive(repair)
+              ? "Repair status: <b>In progress</b>"
+              : repair?.referenceCode
+                ? "Repair status: <b>Payment confirmed; workflow sync pending</b>"
+                : "",
+            "",
+            "Use /orders anytime to check your order. Thank you for choosing Mr Mobiles."
+          ].filter(Boolean).join("\n"),
+          repair?.referenceCode ? {
+            replyMarkup: {
+              inline_keyboard: [
+                [{ text: "📍 Track Repair", callback_data: `repair_status:${repair.referenceCode}` }],
+                [{ text: "👤 My Account", callback_data: "account_summary" }]
+              ]
+            }
+          } : undefined
+        );
       }
     }
 
