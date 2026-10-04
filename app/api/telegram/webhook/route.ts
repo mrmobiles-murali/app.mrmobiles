@@ -711,11 +711,13 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ ok: true });
   } catch (error) {
-    await releaseTelegramUpdate(claimedUpdateId);
     // Fetch exceptions can contain the bot token in their URLs: never log them.
     const code = error instanceof TelegramError ? error.code : 0;
     console.error("Telegram workflow request failed", { code });
-    if (code === 400 || code === 403) return NextResponse.json({ ok: true, deliveryFailed: true });
+    if (code === 400 || code === 403) {
+      return NextResponse.json({ ok: true, deliveryFailed: true });
+    }
+    await releaseTelegramUpdate(claimedUpdateId);
     return NextResponse.json({ ok: false }, { status: 503 });
   }
 }
