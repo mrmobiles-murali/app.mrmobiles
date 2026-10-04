@@ -230,6 +230,7 @@ export type BotContext = {
   repairUpdate?: (referenceCode: string, status: string, note: string) => Promise<boolean>;
   repairQuote?: (referenceCode: string, amountPaise: number, note: string) => Promise<boolean>;
   approveRepair?: (userId: number, referenceCode: string) => Promise<boolean>;
+  cancelRepair?: (userId: number, referenceCode: string) => Promise<boolean>;
   feedback?: (userId: number, responseId: number, rating: 1 | -1) => Promise<boolean>;
 };
 
@@ -308,6 +309,27 @@ function comparisonText(products: InlineProduct[]): string {
   }).join("\n\n");
 }
 
+const CUSTOMER_CANCELLABLE_REPAIR_STATUSES = new Set([
+  "received",
+  "reviewing",
+  "diagnosing",
+  "awaiting_approval",
+  "approved"
+]);
+
+function customerRepairKeyboard(ticket: RepairTicketSummary) {
+  const rows: Array<Array<Record<string, unknown>>> = [
+    [{ text: "📍 Track Repair", callback_data: `repair_status:${ticket.reference_code}` }]
+  ];
+
+  if (CUSTOMER_CANCELLABLE_REPAIR_STATUSES.has(String(ticket.status || ""))) {
+    rows.push([{ text: "🚫 Cancel Request", callback_data: `repair_cancel_prompt:${ticket.reference_code}` }]);
+  }
+
+  rows.push([{ text: "👤 Talk to Human", callback_data: "human_support" }]);
+  return { inline_keyboard: rows };
+}
+
 function repairStatusText(ticket: RepairTicketSummary): string {
   const device = [ticket.device_brand, ticket.device_model].filter(Boolean).join(" ");
   const quote = typeof ticket.quoted_amount_paise === "number"
@@ -358,10 +380,21 @@ function adminTicketKeyboard(ticket: AdminRepairTicket) {
   const rows: Array<Array<Record<string, unknown>>> = [];
   const status = String(ticket.status || "");
 
-  if (status === "received" || status === "reviewing") {
-    rows.push([{ text: "🔎 Start Diagnosis", callback_data: `repair_admin:${ticket.reference_code}:diagnosing` }]);
+  if (status === "received") {
+    rows.push([
+      { text: "✅ Accept", callback_data: `repair_admin:${ticket.reference_code}:reviewing` },
+      { text: "❌ Decline", callback_data: `repair_admin:${ticket.reference_code}:rejected` }
+    ]);
+  } else if (status === "reviewing") {
+    rows.push([
+      { text: "🔎 Start Diagnosis", callback_data: `repair_admin:${ticket.reference_code}:diagnosing` },
+      { text: "❌ Decline", callback_data: `repair_admin:${ticket.reference_code}:rejected` }
+    ]);
   } else if (status === "diagnosing") {
-    rows.push([{ text: "💰 Send Repair Quote", callback_data: `repair_quote_prompt:${ticket.reference_code}` }]);
+    rows.push([
+      { text: "💰 Send Repair Quote", callback_data: `repair_quote_prompt:${ticket.reference_code}` },
+      { text: "❌ Decline", callback_data: `repair_admin:${ticket.reference_code}:rejected` }
+    ]);
   } else if (status === "awaiting_approval") {
     rows.push([
       { text: "💰 Update Quote", callback_data: `repair_quote_prompt:${ticket.reference_code}` },
@@ -493,7 +526,7 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
     const callbackData = typeof callbackQuery.data === "string" ? callbackQuery.data : "";
     const replyMatch = callbackData.match(/^reply_(default|customer):(?:(MRR-[A-F0-9]{10}):)?(\d+)$/i);
     const repairActionMatch = callbackData.match(
-      /^repair_admin:(MRR-[A-F0-9]{10}):(diagnosing|repairing|ready|completed)$/i
+      /^repair_admin:(MRR-[A-F0-9]{10}):(reviewing|diagnosing|repairing|ready|completed|rejected)$/i
     );
     const quotePromptMatch = callbackData.match(/^repair_quote_prompt:(MRR-[A-F0-9]{10})$/i);
     const adminTicketMatch = callbackData.match(/^admin_ticket:(MRR-[A-F0-9]{10})$/i);
@@ -540,7 +573,9 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
 
       const currentStatus = String(ticket?.status || "");
       const allowed = !hasStateGuard ||
-        (requestedStatus === "diagnosing" && ["received", "reviewing"].includes(currentStatus)) ||
+        (requestedStatus === "reviewing" && currentStatus === "received") ||
+        (requestedStatus === "diagnosing" && currentStatus === "reviewing") ||
+        (requestedStatus === "rejected" && ["received", "reviewing", "diagnosing", "awaiting_approval", "approved"].includes(currentStatus)) ||
         (requestedStatus === "ready" && currentStatus === "repairing") ||
         (requestedStatus === "completed" && currentStatus === "ready");
 
@@ -565,7 +600,9 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
       }
 
       const notes: Record<string, string> = {
+        reviewing: "Repair request accepted by Mr Mobiles.",
         diagnosing: "Device inspection started.",
+        rejected: "Mr Mobiles declined this repair request.",
         ready: "Repair is complete and ready for pickup or delivery.",
         completed: "Repair delivered and ticket completed."
       };
@@ -849,7 +886,76 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
         : null;
       await context.call("sendMessage", {
         chat_id: chatId,
-        text: ticket ? repairStatusText(ticket) : "I couldn't find that repair ticket for your Telegram account."
+        text: ticket ? repairStatusText(ticket) : "I couldn't find that repair ticket for your Telegram account.",
+        ...(ticket ? { reply_markup: customerRepairKeyboard(ticket) } : {})
+      });
+      return;
+    }
+
+    if (data.startsWith("repair_cancel_prompt:")) {
+      const referenceCode = data.slice("repair_cancel_prompt:".length).toUpperCase();
+      const ticket = /^MRR-[A-F0-9]{10}$/.test(referenceCode) && context.repairStatus
+        ? await context.repairStatus(userId, referenceCode)
+        : null;
+
+      if (!ticket) {
+        await safeAnswerCallback(context, callbackQuery.id, "Repair ticket not found.");
+        return;
+      }
+
+      if (!CUSTOMER_CANCELLABLE_REPAIR_STATUSES.has(String(ticket.status || ""))) {
+        await safeAnswerCallback(context, callbackQuery.id, "This repair can’t be cancelled from the bot now.");
+        await context.call("sendMessage", {
+          chat_id: chatId,
+          text: "This repair has already moved into work/payment processing. Please contact the Mr Mobiles team if you need help.",
+          reply_markup: { inline_keyboard: [[{ text: "👤 Talk to Human", callback_data: "human_support" }]] }
+        });
+        return;
+      }
+
+      await safeAnswerCallback(context, callbackQuery.id, "Confirm cancellation");
+      await context.call("sendMessage", {
+        chat_id: chatId,
+        text: [
+          "🚫 Cancel repair request?",
+          `Reference: ${referenceCode}`,
+          "",
+          "This will close the current repair ticket."
+        ].join("\n"),
+        reply_markup: {
+          inline_keyboard: [[
+            { text: "Yes, Cancel", callback_data: `repair_cancel_confirm:${referenceCode}` },
+            { text: "Keep Repair", callback_data: `repair_status:${referenceCode}` }
+          ]]
+        }
+      });
+      return;
+    }
+
+    if (data.startsWith("repair_cancel_confirm:")) {
+      const referenceCode = data.slice("repair_cancel_confirm:".length).toUpperCase();
+      const cancelled = /^MRR-[A-F0-9]{10}$/.test(referenceCode) && context.cancelRepair
+        ? await context.cancelRepair(userId, referenceCode)
+        : false;
+
+      await safeAnswerCallback(
+        context,
+        callbackQuery.id,
+        cancelled ? "Repair request cancelled." : "This repair can’t be cancelled now."
+      );
+
+      const ticket = context.repairStatus
+        ? await context.repairStatus(userId, referenceCode)
+        : null;
+
+      await context.call("sendMessage", {
+        chat_id: chatId,
+        text: cancelled
+          ? `🚫 Repair request cancelled\nReference: ${referenceCode}`
+          : "This repair could not be cancelled. Check the latest status or contact Mr Mobiles.",
+        reply_markup: ticket
+          ? customerRepairKeyboard(ticket)
+          : { inline_keyboard: [[{ text: "👤 Talk to Human", callback_data: "human_support" }]] }
       });
       return;
     }
@@ -886,6 +992,7 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
           reply_markup: {
             inline_keyboard: [
               [{ text: "💳 Pay Repair Quote", web_app: { url: payUrl.toString() } }],
+              [{ text: "🚫 Cancel Request", callback_data: `repair_cancel_prompt:${referenceCode}` }],
               [{ text: "📍 Track Repair", callback_data: `repair_status:${referenceCode}` }],
               [{ text: "👤 Talk to Human", callback_data: "human_support" }]
             ]
@@ -1260,6 +1367,7 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
       reply_markup: {
         inline_keyboard: ticket ? [
           [{ text: "📍 Track Repair", callback_data: `repair_status:${ticket.referenceCode}` }],
+          [{ text: "🚫 Cancel Request", callback_data: `repair_cancel_prompt:${ticket.referenceCode}` }],
           [{ text: "👤 Talk to Human", callback_data: "human_support" }]
         ] : [
           [{ text: "👤 Talk to Human", callback_data: "human_support" }]

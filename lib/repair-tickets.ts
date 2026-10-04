@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { repairReferenceFromCart } from "@/lib/repair-payment";
 import { addWorkflowEvent, generateReference } from "@/lib/web-automation";
 
 export const REPAIR_STATUSES = [
@@ -171,6 +172,74 @@ export async function updateRepairTicket(input: {
     referenceCode: data.reference_code,
     status: data.status,
     message: note || `Repair status changed to ${data.status}.`
+  });
+
+  return data;
+}
+
+export const CUSTOMER_CANCELLABLE_REPAIR_STATUSES: RepairStatus[] = [
+  "received",
+  "reviewing",
+  "diagnosing",
+  "awaiting_approval",
+  "approved"
+];
+
+export async function cancelTelegramRepairTicket(userId: number, referenceCode: string) {
+  const supabase = getSupabaseAdmin();
+  const { data: existing, error: lookupError } = await supabase
+    .from("service_requests")
+    .select("id,reference_code,telegram_user_id,status")
+    .eq("request_type", "repair")
+    .eq("source", "telegram")
+    .eq("telegram_user_id", userId)
+    .eq("reference_code", referenceCode)
+    .maybeSingle();
+
+  if (lookupError) throw new Error("Repair ticket lookup failed.");
+  if (!existing || !CUSTOMER_CANCELLABLE_REPAIR_STATUSES.includes(existing.status as RepairStatus)) {
+    return null;
+  }
+
+  const { data: paymentOrders, error: paymentError } = await supabase
+    .from("orders")
+    .select("status,cart")
+    .eq("telegram_user_id", userId)
+    .not("razorpay_order_id", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(100);
+
+  if (paymentError) throw new Error("Repair payment lookup failed.");
+
+  const paymentStarted = (paymentOrders || []).some(order =>
+    repairReferenceFromCart(order.cart) === referenceCode &&
+    ["creating_payment", "created", "payment_pending", "payment_capture_failed", "paid"].includes(String(order.status || ""))
+  );
+
+  if (paymentStarted) return null;
+
+  const note = "Customer cancelled the repair request in Telegram.";
+  const { data, error } = await supabase
+    .from("service_requests")
+    .update({
+      status: "cancelled",
+      status_note: note,
+      updated_at: new Date().toISOString()
+    })
+    .eq("id", existing.id)
+    .eq("status", existing.status)
+    .select("id,reference_code,telegram_user_id,device_brand,device_model,issue_or_condition,status,quoted_amount_paise,status_note,created_at,updated_at")
+    .maybeSingle();
+
+  if (error) throw new Error("Repair cancellation failed.");
+  if (!data) return null;
+
+  await addWorkflowEvent({
+    entityType: "service_request",
+    entityId: data.id,
+    referenceCode: data.reference_code,
+    status: "cancelled",
+    message: note
   });
 
   return data;
