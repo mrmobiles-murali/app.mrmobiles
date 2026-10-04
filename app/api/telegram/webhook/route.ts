@@ -115,6 +115,8 @@ function status(request: NextRequest) {
     technicianAssignment: true,
     repairSlaTracking: true,
     serviceWarranties: true,
+    webhookUpdateDeduplication: true,
+    compactRepairReplies: true,
     secureOrderReceipts: true,
     printableReceiptPdf: true,
     inventoryAdminControls: true,
@@ -137,6 +139,41 @@ class TelegramError extends Error {
   constructor(code: number) { super(`Telegram API failed (${code}).`); this.code = code; }
 }
 
+async function claimTelegramUpdate(update: unknown): Promise<number | null> {
+  const updateId = Number((update as any)?.update_id);
+  if (!Number.isSafeInteger(updateId) || updateId < 0) return null;
+
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase
+    .from("telegram_webhook_updates")
+    .insert({ update_id: updateId });
+
+  if (!error) {
+    if (updateId % 128 === 0) {
+      const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      void supabase.from("telegram_webhook_updates").delete().lt("received_at", cutoff);
+    }
+    return updateId;
+  }
+
+  if (error.code === "23505") return -1;
+
+  // If the dedupe store is temporarily unavailable, keep customer support alive.
+  return null;
+}
+
+async function releaseTelegramUpdate(updateId: number | null) {
+  if (!Number.isSafeInteger(updateId) || Number(updateId) < 0) return;
+  try {
+    await getSupabaseAdmin()
+      .from("telegram_webhook_updates")
+      .delete()
+      .eq("update_id", updateId);
+  } catch {
+    // A failed cleanup should not mask the original webhook error.
+  }
+}
+
 export async function POST(request: NextRequest) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) return NextResponse.json({ ok: false }, { status: 503 });
@@ -148,10 +185,17 @@ export async function POST(request: NextRequest) {
   try { update = await request.json(); }
   catch { return NextResponse.json({ ok: false }, { status: 400 }); }
 
+  let claimedUpdateId: number | null = null;
+
   try {
     // Signed diagnostic: it cannot send a Telegram message.
     if ((update as any)?.mr_mobiles_probe === true && !(update as any)?.message) {
       return NextResponse.json(status(request));
+    }
+
+    claimedUpdateId = await claimTelegramUpdate(update);
+    if (claimedUpdateId === -1) {
+      return NextResponse.json({ ok: true, duplicate: true });
     }
 
     // Self-heal the Telegram webhook subscription after a signed /start update.
@@ -314,7 +358,11 @@ export async function POST(request: NextRequest) {
             }
           }
 
-          if (config.supportChatId && config.admins.length) {
+          if (
+            config.supportChatId &&
+            config.admins.length &&
+            Number(config.supportChatId) !== Number(userId)
+          ) {
             try {
               const adminText = [
                 "🛠 New repair ticket",
@@ -663,6 +711,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ ok: true });
   } catch (error) {
+    await releaseTelegramUpdate(claimedUpdateId);
     // Fetch exceptions can contain the bot token in their URLs: never log them.
     const code = error instanceof TelegramError ? error.code : 0;
     console.error("Telegram workflow request failed", { code });
