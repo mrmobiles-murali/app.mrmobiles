@@ -199,9 +199,11 @@ test("guided repair reply bypasses generic AI and forwards the exact details", a
   });
   assert.equal(calls.length, 1);
   assert.equal(calls[0].method, "sendMessage");
-  assert.match(calls[0].body.text, /Repair ticket created/);
+  assert.match(calls[0].body.text, /Repair request received/);
   assert.match(calls[0].body.text, /MRR-ABCDEF1234/);
-  assert.match(calls[0].body.text, /Samsung S23/);
+  assert.doesNotMatch(calls[0].body.text, /Samsung S23/);
+  assert.match(calls[0].body.text, /technician review/i);
+  assert.equal(calls[0].body.reply_markup.inline_keyboard.length, 2);
   assert.equal(calls[0].body.reply_markup.inline_keyboard[0][0].callback_data, "repair_status:MRR-ABCDEF1234");
 });
 
@@ -418,7 +420,7 @@ test("photo repair ticket shows grounded AI visual pre-check when available", as
       reply_to_message: { text: "🛠️ Repair Diagnosis\n\nReply with:" }
     }
   }, ctx);
-  assert.match(calls[0].body.text, /Visual pre-check/);
+  assert.match(calls[0].body.text, /AI pre-check/);
   assert.match(calls[0].body.text, /Technician inspection confirms diagnosis and price/);
 });
 
@@ -663,7 +665,7 @@ test("photo repair intake routes the Telegram photo file id with caption details
     details: "Samsung A17 5G touch not working after fall",
     photoFileId: "large-photo-id"
   });
-  assert.match(calls[0].body.text, /Repair ticket created/);
+  assert.match(calls[0].body.text, /Repair request received/);
 });
 
 test("admin inventory command lists product IDs and stock truth", async () => {
@@ -700,12 +702,13 @@ test("privacy command warns against sensitive credentials", async () => {
   assert.match(calls[0].body.text, /privately/);
 });
 
-test("repair command offers guided diagnosis and Mini App services", async () => {
+test("repair command keeps the customer flow focused", async () => {
   const { ctx, calls } = context();
   await handleBotUpdate(message("/repair"), ctx);
   const rows = calls[0].body.reply_markup.inline_keyboard;
+  assert.equal(rows.length, 1);
   assert.equal(rows[0][0].callback_data, "repair_start");
-  assert.equal(rows[1][0].web_app.url, "https://mrmobiles.in/?v=2026-10-03.catalog-final&category=service");
+  assert.match(calls[0].body.text, /one message/i);
 });
 
 test("group updates never retrieve or publish customer orders", async () => {
