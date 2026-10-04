@@ -786,3 +786,65 @@ test("failed support delivery never claims the message was sent", async () => {
 test("admin IDs discard invalid entries and cannot grant wildcard access", () => {
   assert.deepEqual(adminIds("99,99,42,bad,-1,*,9007199254740992"), [99,42]);
 });
+
+
+test("admin repair ticket opens from the configured support group", async () => {
+  const { ctx, calls } = context({
+    adminRepairTicket: async referenceCode => ({
+      reference_code: referenceCode,
+      customer_name: "Customer",
+      telegram_user_id: 42,
+      device_brand: "Samsung",
+      device_model: "S23",
+      issue_or_condition: "Display issue",
+      status: "diagnosing",
+      quoted_amount_paise: null,
+      status_note: null,
+      technician_name: null,
+      sla_due_at: null,
+      created_at: "2026-10-04T00:00:00Z",
+      updated_at: "2026-10-04T00:00:00Z"
+    })
+  });
+  await handleBotUpdate(adminCallback("admin_ticket:MRR-ABCDEF1234"), ctx);
+  const opened = calls.find(call => call.method === "sendMessage" && call.body.chat_id === -99);
+  assert.ok(opened);
+  assert.match(opened.body.text, /MRR-ABCDEF1234/);
+  assert.equal(opened.body.reply_markup.inline_keyboard[0][0].callback_data, "repair_quote_prompt:MRR-ABCDEF1234");
+});
+
+test("stale repair quote callbacks cannot roll an active repair backward", async () => {
+  const { ctx, calls } = context({
+    adminRepairTicket: async referenceCode => ({
+      reference_code: referenceCode,
+      telegram_user_id: 42,
+      device_model: "S23",
+      status: "repairing"
+    })
+  });
+  await handleBotUpdate(adminCallback("repair_quote_prompt:MRR-ABCDEF1234"), ctx);
+  assert.equal(calls.some(call => call.body?.reply_markup?.force_reply === true), false);
+  assert.equal(calls.some(call => /cannot be quoted from repairing/i.test(String(call.body?.text || ""))), true);
+});
+
+test("repairupdate cannot manually bypass confirmed quote payment", async () => {
+  let updated = false;
+  const { ctx, calls } = context({
+    adminRepairTicket: async referenceCode => ({
+      reference_code: referenceCode,
+      telegram_user_id: 42,
+      device_model: "S23",
+      status: "approved"
+    }),
+    repairUpdate: async () => {
+      updated = true;
+      return true;
+    }
+  });
+  await handleBotUpdate(message(
+    "/repairupdate MRR-ABCDEF1234 repairing manual",
+    { from: { id: 99, first_name: "Admin" } }
+  ), ctx);
+  assert.equal(updated, false);
+  assert.equal(calls.some(call => /only after the approved quote payment/i.test(String(call.body?.text || ""))), true);
+});
