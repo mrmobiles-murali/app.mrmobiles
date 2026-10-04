@@ -1140,3 +1140,45 @@ input,
   .cardBody { padding: 15px; }
   .productIcon { aspect-ratio: 16 / 9; }
 }
+
+
+/* 2026-10-04 guaranteed clean fallback visual */
+.productFallbackVisual {
+  width: 100%;
+  height: 100%;
+  min-height: 180px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 12px;
+  background:
+    radial-gradient(circle at 22% 18%, rgba(255, 138, 61, .22), transparent 32%),
+    radial-gradient(circle at 82% 78%, rgba(39, 165, 184, .16), transparent 30%),
+    linear-gradient(145deg, #151a20 0%, #0b0e12 64%, #121820 100%);
+}
+
+.productFallbackVisual > span {
+  width: 94px;
+  height: 94px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255,255,255,.08);
+  background: rgba(255,255,255,.035);
+  border-radius: 28px;
+  box-shadow: 0 22px 48px rgba(0,0,0,.30);
+  font-size: 3.4rem;
+}
+
+.productFallbackVisual > small {
+  color: rgba(255,255,255,.62);
+  font-size: .67rem;
+  font-weight: 850;
+  letter-spacing: .18em;
+}
+
+.productIcon img {
+  object-fit: contain;
+  background:
+    radial-gradient(circle at 20% 18%, rgba(255,138,61,.12), transparent 34%),
+    #0d1116;
+}
