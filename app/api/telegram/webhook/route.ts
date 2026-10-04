@@ -115,6 +115,8 @@ function status(request: NextRequest) {
     technicianAssignment: true,
     repairSlaTracking: true,
     serviceWarranties: true,
+    secureOrderReceipts: true,
+    printableReceiptPdf: true,
     inventorySource: "supabase",
     miniAppUrl: config.appUrl, commands: BOT_COMMANDS
   };
