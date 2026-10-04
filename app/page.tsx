@@ -73,17 +73,6 @@ function money(paise: number) {
   }).format(paise / 100);
 }
 
-function productVisualUrl(product: StoreProduct) {
-  if (product.imageUrl) return product.imageUrl;
-  const params = new URLSearchParams({
-    name: product.name,
-    price: money(product.pricePaise),
-    stock: typeof product.stockQty === "number" ? `${product.stockQty} in stock` : "Stock confirmation required",
-    emoji: product.emoji
-  });
-  return `/api/product-card?${params.toString()}`;
-}
-
 export default function Home() {
   const [cart, setCart] = useState<CartMap>({});
   const [products, setProducts] = useState<StoreProduct[]>(catalog);
@@ -694,13 +683,20 @@ export default function Home() {
           return (
             <article className="card" key={product.id}>
               <div className="productIcon">
-                <img
-                  src={productVisualUrl(product)}
-                  alt={product.name}
-                  loading="lazy"
-                  decoding="async"
-                  referrerPolicy="no-referrer"
-                />
+                {product.imageUrl ? (
+                  <img
+                    src={product.imageUrl}
+                    alt={product.name}
+                    loading="lazy"
+                    decoding="async"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <div className="productFallbackVisual" aria-hidden="true">
+                    <span>{product.emoji}</span>
+                    <small>MR MOBILES</small>
+                  </div>
+                )}
                 <span className="visualBadge">{product.category === "phone" ? "PHONE" : product.category === "accessory" ? "ACCESSORY" : "SERVICE"}</span>
               </div>
               <div className="cardBody">
