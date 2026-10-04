@@ -898,3 +898,49 @@ test("repairupdate cannot roll a paid repair backward", async () => {
   assert.equal(updated, false);
   assert.equal(calls.some(call => /cannot move from repairing to awaiting_approval/i.test(String(call.body?.text || ""))), true);
 });
+
+
+test("admin repair quote accepts a one-rupee test amount", async () => {
+  let quote;
+  const { ctx, calls } = context({
+    repairQuote: async (referenceCode, amountPaise, note) => {
+      quote = { referenceCode, amountPaise, note };
+      return true;
+    }
+  });
+  await handleBotUpdate(message("/repairquote MRR-ABCDEF1234 1 Test quote", {
+    from: { id: 99, first_name: "Admin" }
+  }), ctx);
+  assert.deepEqual(quote, {
+    referenceCode: "MRR-ABCDEF1234",
+    amountPaise: 100,
+    note: "Test quote"
+  });
+  assert.match(calls[0].body.text, /₹1/);
+});
+
+test("bound quote prompt accepts a one-rupee test amount", async () => {
+  let quote;
+  const { ctx } = context({
+    repairQuote: async (referenceCode, amountPaise, note) => {
+      quote = { referenceCode, amountPaise, note };
+      return true;
+    }
+  });
+  await handleBotUpdate({
+    update_id: 129,
+    message: {
+      chat: { id: -99, type: "group" },
+      from: { id: 99, first_name: "Admin" },
+      text: "1 Test quote",
+      reply_to_message: {
+        text: "💰 MR MOBILES quote\nReference: MRR-ABCDEF1234\n\nReply with: AMOUNT optional note"
+      }
+    }
+  }, ctx);
+  assert.deepEqual(quote, {
+    referenceCode: "MRR-ABCDEF1234",
+    amountPaise: 100,
+    note: "Test quote"
+  });
+});

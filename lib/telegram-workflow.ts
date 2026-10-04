@@ -677,7 +677,7 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
           `Reference: ${referenceCode}`,
           "",
           "Reply with: AMOUNT optional note",
-          "Example: 2500 Display replacement"
+          "Example: 1 Test quote"
         ].join("\n"),
         reply_markup: {
           force_reply: true,
@@ -1131,7 +1131,7 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
         return;
       }
 
-      const quoteMatch = adminReply.match(/^(\d{2,7})(?:\s+([\s\S]+))?$/);
+      const quoteMatch = adminReply.match(/^(\d{1,7})(?:\s+([\s\S]+))?$/);
       const rupees = Number(quoteMatch?.[1]);
 
       if (!quoteMatch || !Number.isFinite(rupees) || rupees <= 0) {
@@ -1142,7 +1142,7 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
             `Reference: ${referenceCode}`,
             "",
             "Please reply with a valid amount and optional note.",
-            "Example: 2500 Display replacement"
+            "Example: 1 Test quote"
           ].join("\n"),
           reply_markup: {
             force_reply: true,
@@ -1551,7 +1551,7 @@ export async function handleBotUpdate(update: unknown, context: BotContext): Pro
       await send({ text: "This command is available to the Mr Mobiles support team." });
       return;
     }
-    const match = argument.match(/^(MRR-[A-F0-9]{10})\s+(\d{2,7})(?:\s+([\s\S]+))?$/i);
+    const match = argument.match(/^(MRR-[A-F0-9]{10})\s+(\d{1,7})(?:\s+([\s\S]+))?$/i);
     const rupees = Number(match?.[2]);
     if (!match || !Number.isFinite(rupees) || rupees <= 0) {
       await send({ text: "Usage: /repairquote MRR-XXXXXXXXXX AMOUNT optional note" });
