@@ -2,17 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { validateTelegramInitData } from "@/lib/telegram-auth";
 import { listTelegramRepairTickets } from "@/lib/repair-tickets";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import {
+  createReceiptAccessToken,
+  orderReceiptCode
+} from "@/lib/receipt-access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function receiptCode(id: string, createdAt: string) {
-  const date = new Date(createdAt);
-  const stamp = Number.isNaN(date.getTime())
-    ? "ORDER"
-    : date.toISOString().slice(0, 10).replaceAll("-", "");
-  return `MRM-${stamp}-${String(id).slice(0, 8).toUpperCase()}`;
-}
 
 export async function POST(request: NextRequest) {
   try {
@@ -99,10 +95,17 @@ export async function POST(request: NextRequest) {
           new Date(warranty.end_at).getTime() >= Date.now()
         ).length
       },
-      orders: (orders || []).slice(0, 10).map(order => ({
-        ...order,
-        receipt_code: receiptCode(order.id, order.created_at)
-      })),
+      orders: (orders || []).slice(0, 10).map(order => {
+        const receiptToken = createReceiptAccessToken({
+          orderId: order.id,
+          telegramUserId: user.id
+        });
+        return {
+          ...order,
+          receipt_code: orderReceiptCode(order.id, order.created_at),
+          receipt_url: `/receipt?t=${encodeURIComponent(receiptToken)}`
+        };
+      }),
       repairs: tickets,
       warranties: (warranties || []).filter(warranty =>
         new Date(warranty.end_at).getTime() >= Date.now()
