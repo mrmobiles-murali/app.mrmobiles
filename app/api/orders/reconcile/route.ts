@@ -18,32 +18,43 @@ export async function POST(request: NextRequest) {
     const { user } = validateTelegramInitData(initData);
     const supabase = getSupabaseAdmin();
 
-    const { data: orders, error } = await supabase
-      .from("orders")
-      .select("id, telegram_user_id, amount_paise, currency, razorpay_order_id, status, cart")
-      .eq("telegram_user_id", user.id)
-      .not("razorpay_order_id", "is", null)
-      .order("created_at", { ascending: false })
-      .limit(10);
+    const [{ data: orders, error }, { data: paidOrders, error: paidError }] = await Promise.all([
+      supabase
+        .from("orders")
+        .select("id, telegram_user_id, amount_paise, currency, razorpay_order_id, status, cart")
+        .eq("telegram_user_id", user.id)
+        .neq("status", "paid")
+        .not("razorpay_order_id", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(10),
+      supabase
+        .from("orders")
+        .select("id, telegram_user_id, amount_paise, currency, razorpay_order_id, status, cart")
+        .eq("telegram_user_id", user.id)
+        .eq("status", "paid")
+        .not("razorpay_order_id", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(25)
+    ]);
 
     if (error) throw new Error(error.message);
+    if (paidError) throw new Error(paidError.message);
 
     let reconciled = 0;
     let repairsAdvanced = 0;
     const paidOrderIds: string[] = [];
 
+    for (const paidOrder of paidOrders || []) {
+      const repair = await advanceRepairAfterPaidOrder({
+        telegramUserId: user.id,
+        amountPaise: Number(paidOrder.amount_paise),
+        cart: paidOrder.cart
+      });
+      if (repair?.advanced) repairsAdvanced += 1;
+    }
+
     for (const order of orders || []) {
       if (!order.razorpay_order_id) continue;
-
-      if (order.status === "paid") {
-        const repair = await advanceRepairAfterPaidOrder({
-          telegramUserId: user.id,
-          amountPaise: Number(order.amount_paise),
-          cart: order.cart
-        });
-        if (repair?.advanced) repairsAdvanced += 1;
-        continue;
-      }
 
       const matchesOrder = (payment: RazorpayPayment) =>
         payment.order_id === order.razorpay_order_id &&
