@@ -585,13 +585,13 @@ export default function Home() {
 
   return (
     <main className="shell">
-      <section className="hero">
-        <div>
-          <div className="eyebrow">MR MOBILES • CURATED TECH</div>
+      <section className="hero heroUnified">
+        <div className="brandLockup" aria-label="Mr Mobiles">
+          <div className="brandWordmark">MR MOBILES</div>
+          <div className="eyebrow">CURATED TECH • TELEGRAM STORE</div>
           <h1>Tech, styled better.</h1>
           <p>Phones, accessories, smart wearables, audio and repair — presented like a premium showroom inside Telegram.</p>
         </div>
-        <div className="brandMark" aria-label="Mr Mobiles"><span>MR</span><small>MOBILES</small></div>
       </section>
 
       <nav className="chips" aria-label="Product categories">
