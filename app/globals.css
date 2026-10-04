@@ -1017,3 +1017,41 @@ input,
 .visualBadge {
   font-family: var(--font-manrope), system-ui, sans-serif;
 }
+
+
+/* Unified front branding */
+.heroUnified {
+  display: block;
+  padding-top: 18px;
+}
+
+.brandLockup {
+  width: 100%;
+  display: grid;
+  gap: 6px;
+}
+
+.brandWordmark {
+  width: fit-content;
+  font-family: var(--font-sora), var(--font-manrope), system-ui, sans-serif;
+  font-size: clamp(1.2rem, 5.8vw, 1.75rem);
+  font-weight: 800;
+  letter-spacing: -.055em;
+  line-height: 1;
+  background: linear-gradient(110deg, #ff8a3d 0%, #ffbd63 46%, #f4f7fb 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.heroUnified .eyebrow {
+  margin-top: 2px;
+}
+
+.heroUnified h1 {
+  margin-top: 14px;
+}
+
+.brandMark {
+  display: none;
+}
