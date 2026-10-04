@@ -1055,3 +1055,88 @@ input,
 .brandMark {
   display: none;
 }
+
+
+/* 2026-10-04 mobile catalog card fix */
+.card {
+  display: block;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: 24px;
+}
+
+.productIcon {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  display: block;
+  background:
+    radial-gradient(circle at 22% 18%, rgba(255, 138, 61, .18), transparent 34%),
+    linear-gradient(145deg, #151a20 0%, #0c0f13 65%, #121820 100%);
+}
+
+.productIcon img {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: block;
+  object-fit: cover;
+  object-position: center;
+}
+
+.visualBadge {
+  position: absolute;
+  left: 14px;
+  top: 14px;
+  z-index: 2;
+  padding: 6px 9px;
+  border: 1px solid rgba(255, 138, 61, .28);
+  background: rgba(10, 12, 15, .72);
+  backdrop-filter: blur(8px);
+  border-radius: 999px;
+  color: var(--accent);
+  font-size: .64rem;
+  font-weight: 850;
+  letter-spacing: .08em;
+}
+
+.cardBody {
+  padding: 16px 16px 17px;
+}
+
+.card h2 {
+  margin: 6px 0 4px;
+  font-size: 1.18rem;
+  line-height: 1.24;
+}
+
+.card p {
+  min-height: 0;
+  margin-top: 4px;
+  font-size: .84rem;
+  line-height: 1.44;
+}
+
+.cardBottom {
+  margin-top: 15px;
+  padding-top: 13px;
+  border-top: 1px solid var(--line);
+}
+
+.cardBottom strong {
+  font-size: 1.12rem;
+}
+
+.add {
+  min-width: 82px;
+  min-height: 44px;
+  border-radius: 14px;
+}
+
+@media (max-width: 430px) {
+  .grid { gap: 16px; }
+  .card { border-radius: 22px; }
+  .cardBody { padding: 15px; }
+  .productIcon { aspect-ratio: 16 / 9; }
+}
