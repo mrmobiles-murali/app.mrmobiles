@@ -97,7 +97,7 @@ export default function Home() {
   const [paymentsEnabled, setPaymentsEnabled] = useState(false);
   const [repairs, setRepairs] = useState<RepairItem[]>([]);
   const [account, setAccount] = useState<AccountData | null>(null);
-  const [repairsOpen, setRepairsOpen] = useState(true);
+  const [repairsOpen, setRepairsOpen] = useState(false);
   const [message, setMessage] = useState("");
 
   useEffect(() => {
@@ -196,8 +196,8 @@ export default function Home() {
       const text = theme.text_color || (isLight ? "#111827" : "#f7f9fb");
       const muted = theme.hint_color || (isLight ? "#667085" : "#98a2ad");
       const line = theme.section_separator_color || (isLight ? "#dfe3e8" : "#252c34");
-      const accent = theme.button_color || "#14b8a6";
-      const accentText = theme.button_text_color || (isLight ? "#ffffff" : "#04100e");
+      const accent = "#ff8a3d";
+      const accentText = "#180a02";
 
       root.style.colorScheme = tg.colorScheme;
       root.style.setProperty("--bg", bg);
@@ -585,13 +585,13 @@ export default function Home() {
 
   return (
     <main className="shell">
-      <section className="hero">
-        <div>
-          <div className="eyebrow">Mr Mobiles • Telegram Shop</div>
-          <h1>Shop. Repair. Order.</h1>
-          <p>Phones, accessories and service bookings — directly inside Telegram.</p>
+      <section className="hero heroUnified">
+        <div className="brandLockup" aria-label="Mr Mobiles">
+          <div className="brandWordmark">MR MOBILES</div>
+          <div className="eyebrow">CURATED TECH • TELEGRAM STORE</div>
+          <h1>Tech, styled better.</h1>
+          <p>Phones, accessories, smart wearables, audio and repair — presented like a premium showroom inside Telegram.</p>
         </div>
-        <div className="brandMark">Mr</div>
       </section>
 
       <nav className="chips" aria-label="Product categories">
@@ -680,6 +680,14 @@ export default function Home() {
           )}
         </section>
 
+      <div className="catalogHeading">
+        <div>
+          <span className="eyebrow">VISUAL CATALOG</span>
+          <h2>{category === "all" ? "Featured collection" : category === "phone" ? "Phones" : category === "accessory" ? "Accessories & lifestyle tech" : "Service & repair"}</h2>
+        </div>
+        <span>{filtered.length} {filtered.length === 1 ? "item" : "items"}</span>
+      </div>
+
       <section className="grid">
         {filtered.map((product) => {
           const qty = cart[product.id] || 0;
@@ -688,10 +696,12 @@ export default function Home() {
               <div className="productIcon">
                 <img
                   src={productVisualUrl(product)}
-                  alt=""
+                  alt={product.name}
                   loading="lazy"
+                  decoding="async"
                   referrerPolicy="no-referrer"
                 />
+                <span className="visualBadge">{product.category === "phone" ? "PHONE" : product.category === "accessory" ? "ACCESSORY" : "SERVICE"}</span>
               </div>
               <div className="cardBody">
                 <span className="pill">{product.category}</span>
