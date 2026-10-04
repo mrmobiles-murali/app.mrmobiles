@@ -269,7 +269,9 @@ export async function POST(request: NextRequest) {
       });
       const data = await response.json();
       if (!response.ok || data?.ok !== true) {
-        throw new TelegramError(Number(data?.error_code || response.status));
+        const rawDescription = typeof data?.description === "string" ? data.description : "";
+        const safeDescription = rawDescription.replaceAll(token, "[redacted]").slice(0, 240);
+        throw new TelegramError(Number(data?.error_code || response.status), "setWebhook", safeDescription);
       }
     }
 
