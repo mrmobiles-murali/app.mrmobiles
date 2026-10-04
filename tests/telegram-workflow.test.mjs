@@ -203,8 +203,9 @@ test("guided repair reply bypasses generic AI and forwards the exact details", a
   assert.match(calls[0].body.text, /MRR-ABCDEF1234/);
   assert.doesNotMatch(calls[0].body.text, /Samsung S23/);
   assert.match(calls[0].body.text, /technician review/i);
-  assert.equal(calls[0].body.reply_markup.inline_keyboard.length, 2);
+  assert.equal(calls[0].body.reply_markup.inline_keyboard.length, 3);
   assert.equal(calls[0].body.reply_markup.inline_keyboard[0][0].callback_data, "repair_status:MRR-ABCDEF1234");
+  assert.equal(calls[0].body.reply_markup.inline_keyboard[1][0].callback_data, "repair_cancel_prompt:MRR-ABCDEF1234");
 });
 
 test("guided repair reply asks for more detail when input is too short", async () => {
@@ -946,4 +947,107 @@ test("bound quote prompt accepts a one-rupee test amount", async () => {
     amountPaise: 100,
     note: "Test quote"
   });
+});
+
+
+test("customer can cancel an eligible repair with confirmation", async () => {
+  let cancelled;
+  const repair = {
+    reference_code: "MRR-ABCDEF1234",
+    device_brand: "Samsung",
+    device_model: "S23",
+    issue_or_condition: "Display issue",
+    status: "received"
+  };
+  const { ctx, calls } = context({
+    repairStatus: async (userId, referenceCode) => ({
+      ...repair,
+      reference_code: referenceCode
+    }),
+    cancelRepair: async (userId, referenceCode) => {
+      cancelled = { userId, referenceCode };
+      repair.status = "cancelled";
+      return true;
+    }
+  });
+
+  await handleBotUpdate(callback("repair_cancel_prompt:MRR-ABCDEF1234"), ctx);
+  const prompt = calls.find(call => /Cancel repair request/.test(String(call.body?.text || "")));
+  assert.ok(prompt);
+  assert.equal(prompt.body.reply_markup.inline_keyboard[0][0].callback_data, "repair_cancel_confirm:MRR-ABCDEF1234");
+
+  calls.length = 0;
+  await handleBotUpdate(callback("repair_cancel_confirm:MRR-ABCDEF1234"), ctx);
+  assert.deepEqual(cancelled, { userId: 42, referenceCode: "MRR-ABCDEF1234" });
+  assert.match(calls.find(call => call.method === "sendMessage").body.text, /cancelled/i);
+});
+
+test("customer cancel is blocked once repair work has started", async () => {
+  let cancelled = false;
+  const { ctx, calls } = context({
+    repairStatus: async referenceCode => ({
+      reference_code: "MRR-ABCDEF1234",
+      device_model: "S23",
+      issue_or_condition: "Display issue",
+      status: "repairing"
+    }),
+    cancelRepair: async () => {
+      cancelled = true;
+      return true;
+    }
+  });
+
+  await handleBotUpdate(callback("repair_cancel_prompt:MRR-ABCDEF1234"), ctx);
+  assert.equal(cancelled, false);
+  assert.equal(calls.some(call => /already moved into work\/payment processing/i.test(String(call.body?.text || ""))), true);
+});
+
+test("admin can accept a new repair from the ticket controls", async () => {
+  let updated;
+  const { ctx, calls } = context({
+    adminRepairTicket: async referenceCode => ({
+      reference_code: referenceCode,
+      telegram_user_id: 42,
+      device_model: "S23",
+      issue_or_condition: "Display issue",
+      status: updated?.status || "received"
+    }),
+    repairUpdate: async (referenceCode, status, note) => {
+      updated = { referenceCode, status, note };
+      return true;
+    }
+  });
+
+  await handleBotUpdate(adminCallback("repair_admin:MRR-ABCDEF1234:reviewing"), ctx);
+  assert.deepEqual(updated, {
+    referenceCode: "MRR-ABCDEF1234",
+    status: "reviewing",
+    note: "Repair request accepted by Mr Mobiles."
+  });
+  assert.equal(calls.some(call => /updated to reviewing/i.test(String(call.body?.text || ""))), true);
+});
+
+test("admin can decline a new repair from the ticket controls", async () => {
+  let updated;
+  const { ctx, calls } = context({
+    adminRepairTicket: async referenceCode => ({
+      reference_code: referenceCode,
+      telegram_user_id: 42,
+      device_model: "S23",
+      issue_or_condition: "Display issue",
+      status: updated?.status || "received"
+    }),
+    repairUpdate: async (referenceCode, status, note) => {
+      updated = { referenceCode, status, note };
+      return true;
+    }
+  });
+
+  await handleBotUpdate(adminCallback("repair_admin:MRR-ABCDEF1234:rejected"), ctx);
+  assert.deepEqual(updated, {
+    referenceCode: "MRR-ABCDEF1234",
+    status: "rejected",
+    note: "Mr Mobiles declined this repair request."
+  });
+  assert.equal(calls.some(call => /updated to rejected/i.test(String(call.body?.text || ""))), true);
 });
