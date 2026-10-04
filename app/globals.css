@@ -209,6 +209,25 @@ button { font: inherit; }
   text-transform: capitalize;
 }
 
+.receiptLink {
+  width: fit-content;
+  min-height: 34px;
+  padding: 0 11px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgba(20, 184, 166, .35);
+  background: rgba(20, 184, 166, .08);
+  color: var(--accent);
+  border-radius: 10px;
+  font-size: .74rem;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.receiptLink:active {
+  transform: translateY(1px);
+}
+
 .deviceList {
   display: flex;
   flex-wrap: wrap;
