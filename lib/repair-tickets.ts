@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { repairReferenceFromCart } from "@/lib/repair-payment";
 import { addWorkflowEvent, generateReference } from "@/lib/web-automation";
 
 export const REPAIR_STATUSES = [
@@ -199,6 +200,23 @@ export async function cancelTelegramRepairTicket(userId: number, referenceCode: 
   if (!existing || !CUSTOMER_CANCELLABLE_REPAIR_STATUSES.includes(existing.status as RepairStatus)) {
     return null;
   }
+
+  const { data: paymentOrders, error: paymentError } = await supabase
+    .from("orders")
+    .select("status,cart")
+    .eq("telegram_user_id", userId)
+    .not("razorpay_order_id", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(100);
+
+  if (paymentError) throw new Error("Repair payment lookup failed.");
+
+  const paymentStarted = (paymentOrders || []).some(order =>
+    repairReferenceFromCart(order.cart) === referenceCode &&
+    ["creating_payment", "created", "payment_pending", "payment_capture_failed", "paid"].includes(String(order.status || ""))
+  );
+
+  if (paymentStarted) return null;
 
   const note = "Customer cancelled the repair request in Telegram.";
   const { data, error } = await supabase
