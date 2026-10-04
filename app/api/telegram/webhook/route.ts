@@ -52,6 +52,19 @@ function repairAdminKeyboard(referenceCode: string, userId?: number, status = "r
   return { inline_keyboard: rows };
 }
 
+function repairCustomerKeyboard(referenceCode: string, status: string) {
+  const rows: Array<Array<Record<string, string>>> = [
+    [{ text: "📍 Track Repair", callback_data: `repair_status:${referenceCode}` }]
+  ];
+
+  if (["received", "reviewing", "diagnosing", "awaiting_approval", "approved"].includes(status)) {
+    rows.push([{ text: "🚫 Cancel Request", callback_data: `repair_cancel_prompt:${referenceCode}` }]);
+  }
+
+  rows.push([{ text: "👤 Talk to Human", callback_data: "human_support" }]);
+  return { inline_keyboard: rows };
+}
+
 function repairCustomerStatusText(referenceCode: string, status: string, note?: string | null) {
   const messages: Record<string, [string, string]> = {
     received: ["🛠 Repair received", "Your device is in the Mr Mobiles repair queue."],
@@ -455,12 +468,7 @@ export async function POST(request: NextRequest) {
             await callTelegram("sendMessage", {
               chat_id: Number(ticket.telegram_user_id),
               text: repairCustomerStatusText(ticket.reference_code, ticket.status, ticket.status_note),
-              reply_markup: {
-                inline_keyboard: [
-                  [{ text: "📍 Track Repair", callback_data: `repair_status:${ticket.reference_code}` }],
-                  [{ text: "👤 Talk to Human", callback_data: "human_support" }]
-                ]
-              }
+              reply_markup: repairCustomerKeyboard(ticket.reference_code, ticket.status)
             });
           } catch {
             // The database state is authoritative even if notification delivery fails.
