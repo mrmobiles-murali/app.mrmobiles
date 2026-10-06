@@ -21,6 +21,9 @@ export async function GET() {
         category: item.category,
         emoji: item.emoji,
         imageUrl: item.imageUrl || null,
+        dailyVisualUrl: item.dailyVisualUrl || null,
+        visualRotationCount: item.visualRotationCount || 0,
+        visualDay: item.visualDay || null,
         stockQty: item.stockQty ?? null
       }))
   });
