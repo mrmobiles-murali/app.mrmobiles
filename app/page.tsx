@@ -91,6 +91,9 @@ export default function Home() {
   const [account, setAccount] = useState<AccountData | null>(null);
   const [repairsOpen, setRepairsOpen] = useState(false);
   const [message, setMessage] = useState("");
+  const [activeTab, setActiveTab] = useState<"home" | "categories" | "search" | "orders" | "profile">("home");
+  const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -284,6 +287,45 @@ export default function Home() {
     () => category === "all" ? products : products.filter((p) => p.category === category),
     [category, products]
   );
+
+  const selectedProduct = useMemo(
+    () => selectedProductId ? products.find((product) => product.id === selectedProductId) || null : null,
+    [products, selectedProductId]
+  );
+
+  const searchedProducts = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+    if (!term) return products;
+    return products.filter((product) =>
+      [product.name, product.subtitle, product.brand, product.model, product.category]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(term)
+    );
+  }, [products, searchTerm]);
+
+  const homePhones = useMemo(
+    () => products.filter((product) => product.category === "phone").slice(0, 4),
+    [products]
+  );
+
+  function productVisual(product: StoreProduct) {
+    if (product.imageUrl) return product.imageUrl;
+    return `/api/showcase-image?id=${encodeURIComponent(product.id)}&category=${encodeURIComponent(product.category)}`;
+  }
+
+  function openCategory(nextCategory: typeof category) {
+    setSelectedProductId(null);
+    setCategory(nextCategory);
+    setActiveTab("categories");
+    window.Telegram?.WebApp.HapticFeedback?.selectionChanged();
+  }
+
+  function openProduct(product: StoreProduct) {
+    setSelectedProductId(product.id);
+    window.Telegram?.WebApp.HapticFeedback?.impactOccurred("light");
+  }
 
   const total = useMemo(
     () => products.reduce((sum, p) => sum + p.pricePaise * (cart[p.id] || 0), 0),
@@ -576,285 +618,269 @@ export default function Home() {
   }
 
   return (
-    <main className="shell">
-      <section className="hero heroUnified">
-        <div className="brandLockup" aria-label="Mr Mobiles">
-          <div className="brandWordmark">MR MOBILES</div>
-          <div className="eyebrow">CURATED TECH • TELEGRAM STORE</div>
-          <h1>Tech, styled better.</h1>
-          <p>Phones, accessories, smart wearables, audio and repair — presented like a premium showroom inside Telegram.</p>
-        </div>
-      </section>
-
-      <nav className="chips" aria-label="Product categories">
-        {[
-          ["all", "All"],
-          ["phone", "Phones"],
-          ["accessory", "Accessories"],
-          ["service", "Repair"]
-        ].map(([value, label]) => (
-          <button
-            key={value}
-            className={category === value ? "chip active" : "chip"}
-            onClick={() => {
-              setCategory(value as typeof category);
-              window.Telegram?.WebApp.HapticFeedback?.selectionChanged();
-            }}
-          >
-            {label}
-          </button>
-        ))}
-      </nav>
-
-      <section className="accountPanel">
-          <button className="accountToggle" onClick={() => setRepairsOpen((value) => !value)}>
-            <span>
-              <strong>My Mr Mobiles Account</strong>
-              <small>
-                {sessionReady
-                  ? `${account?.summary.orderCount ?? 0} orders · ${repairs.length} repairs · ${account?.summary.loyaltyPoints ?? 0} MR Points`
-                  : "Connecting securely to Telegram…"}
-              </small>
-            </span>
-            <span>{repairsOpen ? "−" : "+"}</span>
-          </button>
-          {repairsOpen && (
-            <div className="accountBody">
-              {!sessionReady && <p>Open this Mini App from Mr Mobiles in Telegram to load your private account.</p>}
-              {sessionReady && account && (
-                <>
-                  <h3>Account overview</h3>
-                  <div className="accountStats">
-                    <div><strong>{account.summary.loyaltyPoints}</strong><span>MR Points</span></div>
-                    <div><strong>{money(account.summary.paidSpendPaise)}</strong><span>Paid spend</span></div>
-                    <div><strong>{account.summary.activeRepairs}</strong><span>Active repairs</span></div>
-                    <div><strong>{account.summary.activeWarranties}</strong><span>Warranties</span></div>
-                  </div>
-                  <p className="accountNote">MR Points earn at 1 point per ₹100 of verified paid orders.</p>
-                  <h3>Recent orders & receipts</h3>
-                  {account.orders.length ? account.orders.slice(0, 5).map((order) => (
-                    <div className="repairItem" key={order.id}>
-                      <strong>{order.receipt_code}</strong>
-                      <span>{money(order.amount_paise)} · {order.status}{order.workflow_status ? ` · ${order.workflow_status.replaceAll("_", " ")}` : ""}</span>
-                      <em>{order.tracking_code || "Order receipt"}</em>
-                      <a className="receiptLink" href={order.receipt_url}>View receipt / PDF</a>
-                    </div>
-                  )) : <p>No Telegram orders yet.</p>}
-                  <h3>Service warranties</h3>
-                  {account.warranties.length ? account.warranties.map((warranty) => (
-                    <div className="repairItem" key={warranty.warranty_code}>
-                      <strong>🛡 {warranty.device_label}</strong>
-                      <span>{warranty.warranty_code} · Repair {warranty.repair_reference}</span>
-                      <em>Valid until {new Date(warranty.end_at).toLocaleDateString("en-IN")}</em>
-                      {warranty.note ? <span>{warranty.note}</span> : null}
-                    </div>
-                  )) : <p>No active service warranties.</p>}
-                </>
-              )}
-              <h3>Repair history</h3>
-              {sessionReady && repairs.length ? repairs.map((ticket) => (
-                <div className="repairItem" key={ticket.reference_code}>
-                  <strong>{[ticket.device_brand, ticket.device_model].filter(Boolean).join(" ")}</strong>
-                  <span>{ticket.reference_code} · {ticket.issue_or_condition}</span>
-                  <em>{ticket.status.replaceAll("_", " ")}</em>
-                </div>
-              )) : sessionReady ? <p>No Telegram repair history yet.</p> : null}
-              <h3>My devices</h3>
-              <div className="deviceList">
-                {sessionReady && savedDevices.length ? savedDevices.map((device) => <span key={device}>📱 {device}</span>) : sessionReady ? <p>Devices are saved automatically from repair history.</p> : null}
-              </div>
-              {sessionReady && (
-                <p className="accountNote">
-                  Service warranty dates shown above are issued by Mr Mobiles after a completed repair. Product warranty terms remain governed by the official bill/manufacturer terms.
-                </p>
-              )}
-            </div>
-          )}
-        </section>
-
-      <div className="catalogHeading">
+    <main className="shell storeShell">
+      <header className="storeTopbar">
         <div>
-          <span className="eyebrow">VISUAL CATALOG</span>
-          <h2>{category === "all" ? "Featured collection" : category === "phone" ? "Phones" : category === "accessory" ? "Accessories & lifestyle tech" : "Service & repair"}</h2>
+          <strong>MR MOBILES</strong>
+          <small>mini app</small>
         </div>
-        <span>{filtered.length} {filtered.length === 1 ? "item" : "items"}</span>
-      </div>
+        <button type="button" aria-label="More options">•••</button>
+      </header>
 
-      <section className="grid">
-        {filtered.map((product) => {
-          const qty = cart[product.id] || 0;
-          return (
-            <article className="card" key={product.id}>
-              <div className="productIcon">
-                {product.imageUrl || product.dailyVisualUrl ? (
-                  <img
-                    src={product.imageUrl || product.dailyVisualUrl || ""}
-                    alt={product.name}
-                    loading="lazy"
-                    decoding="async"
-                    referrerPolicy="no-referrer"
-                  />
-                ) : (
-                  <div className="productFallbackVisual" aria-hidden="true">
-                    <span>{product.emoji}</span>
-                    <small>MR MOBILES</small>
-                  </div>
-                )}
-                <span className="visualBadge">{product.category === "phone" ? "PHONE" : product.category === "accessory" ? "GADGET" : "SERVICE"}</span>
-              </div>
-              <div className="cardBody">
-                <span className="pill">{product.category}</span>
-                <h2>{product.name}</h2>
-                {(product.brand || product.model) && (
-                  <p>{[product.brand, product.model].filter(Boolean).join(" • ")}</p>
-                )}
-                <p>{product.subtitle}</p>
-                <p>
-                  {typeof product.stockQty === "number"
-                    ? `${product.stockQty} in stock`
-                    : "Stock confirmed before order"}
-                </p>
-                <div className="cardBottom">
-                  <strong>{money(product.pricePaise)}</strong>
-                  {qty === 0 ? (
-                    <button className="add" onClick={() => add(product.id)}>Add</button>
-                  ) : (
-                    <div className="qty">
-                      <button onClick={() => changeQty(product.id, -1)} aria-label="Decrease">−</button>
-                      <span>{qty}</span>
-                      <button onClick={() => changeQty(product.id, 1)} aria-label="Increase">+</button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </article>
-          );
-        })}
-      </section>
-
-      {repairPaymentRef && (
-        <section className="customPaymentPanel" aria-labelledby="repair-payment-title">
-          <div className="customPaymentHeading">
-            <div>
-              <span className="pill">Approved repair</span>
-              <h2 id="repair-payment-title">Pay repair quote</h2>
-              <p>
-                {repairPaymentTicket
-                  ? `${[repairPaymentTicket.device_brand, repairPaymentTicket.device_model].filter(Boolean).join(" ")} · ${repairPaymentTicket.reference_code}`
-                  : `Loading ${repairPaymentRef}…`}
-              </p>
-            </div>
-            <strong>🔧</strong>
+      {selectedProduct ? (
+        <section className="productDetailView">
+          <button type="button" className="detailBack" onClick={() => setSelectedProductId(null)} aria-label="Back to products">←</button>
+          <button type="button" className="detailHeart" aria-label="Add to favourites">♡</button>
+          <div className="detailVisual">
+            <img src={productVisual(selectedProduct)} alt={selectedProduct.name} />
           </div>
+          <div className="detailContent">
+            <span className="detailCounter">1/1</span>
+            <h1>{selectedProduct.name}</h1>
+            <p>{selectedProduct.subtitle}</p>
+            <div className="detailPriceRow">
+              <strong>{money(selectedProduct.pricePaise)}</strong>
+              <span>{typeof selectedProduct.stockQty === "number" && selectedProduct.stockQty > 0 ? "In Stock" : "Check Stock"}</span>
+            </div>
 
-          {repairPaymentTicket ? (
-            <div className="customPaymentForm">
-              <label>Quoted amount</label>
-              <div>
-                <span>₹</span>
-                <input
-                  aria-label="Approved repair quote amount"
-                  value={repairPaymentTicket.quoted_amount_paise ? String(repairPaymentTicket.quoted_amount_paise / 100) : ""}
-                  readOnly
-                />
-                <button
-                  type="button"
-                  disabled={
-                    repairLoading ||
-                    !sessionReady ||
-                    repairPaymentTicket.status !== "approved" ||
-                    !repairPaymentTicket.quoted_amount_paise
-                  }
-                  onClick={payRepairQuote}
-                >
-                  {repairLoading
-                    ? "Preparing…"
-                    : repairPaymentTicket.status === "approved"
-                      ? `Pay ${money(Number(repairPaymentTicket.quoted_amount_paise || 0))}`
-                      : "Payment completed"}
+            <div className="detailSpecs">
+              <div><b>✓</b><span>Verified</span><small>MR Mobiles</small></div>
+              <div><b>▣</b><span>Storage</span><small>{selectedProduct.name.match(/\d+GB/)?.[0] || "Live option"}</small></div>
+              <div><b>◈</b><span>Condition</span><small>Confirmed before sale</small></div>
+              <div><b>⌁</b><span>Support</span><small>Hosur store</small></div>
+            </div>
+
+            <div className="detailOptionBlock">
+              <label>Available configuration</label>
+              <div className="storageChoices">
+                <button type="button" className="active">
+                  {selectedProduct.name.match(/\d+GB/)?.[0] || "Current stock"}
                 </button>
               </div>
-              <small>
-                {repairPaymentTicket.status === "approved"
-                  ? "Amount is locked to the technician-approved quote and verified again on the server."
-                  : `Repair status: ${repairPaymentTicket.status.replaceAll("_", " ")}`}
-              </small>
             </div>
-          ) : (
-            <p className="accountNote">Loading your approved repair quote securely from Telegram…</p>
+
+            <div className="detailOptionBlock">
+              <label>Colour / condition</label>
+              <p>Exact colour, grade and battery health are confirmed from live stock before order.</p>
+            </div>
+
+            <button className="detailAddButton" type="button" onClick={() => add(selectedProduct.id)}>
+              🛒 {cart[selectedProduct.id] ? "In Cart · " + cart[selectedProduct.id] : "Add to Cart"}
+            </button>
+          </div>
+        </section>
+      ) : (
+        <>
+          {activeTab === "home" && (
+            <>
+              <section className="storeHero">
+                <img src="/api/showcase-image?id=hero" alt="Featured smartphone" loading="eager" />
+                <div className="storeHeroShade" />
+                <div className="storeHeroCopy">
+                  <span>FEATURED TODAY</span>
+                  <h1>iPhone 13 Pro</h1>
+                  <p>Pro camera. Premium build. Certified pre-owned.</p>
+                  <button type="button" onClick={() => {
+                    const hero = products.find((product) => product.id === "iphone-13-pro-128");
+                    if (hero) openProduct(hero);
+                  }}>Explore Now →</button>
+                </div>
+                <div className="heroDots"><i /><i className="active" /><i /><i /></div>
+              </section>
+
+              <section className="quickCategories" aria-label="Quick categories">
+                <button type="button" onClick={() => openCategory("phone")}><span>📱</span><b>Mobiles</b></button>
+                <button type="button" onClick={() => openCategory("accessory")}><span>🎧</span><b>Accessories</b></button>
+                <button type="button" onClick={() => openCategory("accessory")}><span>⌚</span><b>Gadgets</b></button>
+                <button type="button" onClick={() => openCategory("service")}><span>🛠</span><b>Repairs</b></button>
+              </section>
+
+              <div className="storeSectionHeading">
+                <div><h2>Today&apos;s Picks</h2><p>Fresh choices for you</p></div>
+                <button type="button" onClick={() => openCategory("all")}>See All ›</button>
+              </div>
+
+              <section className="featuredGrid">
+                {homePhones.slice(0, 2).map((product) => (
+                  <article className="featuredCard" key={product.id} onClick={() => openProduct(product)}>
+                    <div className="featuredImage"><img src={productVisual(product)} alt={product.name} /></div>
+                    <small>{product.brand || "MR Mobiles"}</small>
+                    <h3>{product.name}</h3>
+                    <strong>{money(product.pricePaise)}</strong>
+                    <button type="button" onClick={(event) => { event.stopPropagation(); add(product.id); }}>→</button>
+                  </article>
+                ))}
+              </section>
+
+              <section className="homePromoStrip">
+                <img src="/api/showcase-image?id=service&category=service" alt="Mobile repair service" />
+                <div><small>MR MOBILES REPAIR</small><h3>Expert diagnostics & repair</h3><p>Track every stage inside Telegram.</p></div>
+                <button type="button" onClick={() => openCategory("service")}>Book ›</button>
+              </section>
+            </>
           )}
+
+          {activeTab === "categories" && (
+            <>
+              <div className="catalogTop">
+                <h1>{category === "accessory" ? "Accessories" : category === "service" ? "Repairs" : "Mobiles"}</h1>
+                <p>{category === "accessory" ? "Cases, charging gear and everyday essentials." : category === "service" ? "Diagnostics, repair booking and service support." : "Top brands. Live stock. Best available deals."}</p>
+              </div>
+
+              {category !== "service" && (
+                <div className="brandRail">
+                  {["All", "Apple", "Samsung", "Google", "OnePlus"].map((brand, index) => (
+                    <button key={brand} type="button" className={index === 0 ? "active" : ""}>
+                      <span>{brand === "Apple" ? "●" : brand === "Samsung" ? "S" : brand === "Google" ? "G" : brand === "OnePlus" ? "1+" : "✦"}</span>
+                      <small>{brand}</small>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <section className="storeProductGrid">
+                {filtered.map((product) => (
+                  <article className="storeProductCard" key={product.id} onClick={() => openProduct(product)}>
+                    <div className="storeProductImage">
+                      <img src={productVisual(product)} alt={product.name} loading="lazy" />
+                      <button type="button" className="heart" aria-label="Favourite">♡</button>
+                    </div>
+                    <h3>{product.name}</h3>
+                    <p>{product.name.match(/\d+GB/)?.[0] || product.brand || "MR Mobiles"} · {typeof product.stockQty === "number" ? String(product.stockQty) + " in stock" : "Live stock"}</p>
+                    <div><strong>{money(product.pricePaise)}</strong><button type="button" onClick={(event) => { event.stopPropagation(); add(product.id); }}>🛒</button></div>
+                  </article>
+                ))}
+              </section>
+            </>
+          )}
+
+          {activeTab === "search" && (
+            <>
+              <div className="catalogTop"><h1>Search</h1><p>Find phones, accessories and repair services.</p></div>
+              <label className="storeSearch">
+                <span>⌕</span>
+                <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search MR MOBILES" autoFocus />
+              </label>
+              <section className="storeProductGrid">
+                {searchedProducts.map((product) => (
+                  <article className="storeProductCard" key={product.id} onClick={() => openProduct(product)}>
+                    <div className="storeProductImage"><img src={productVisual(product)} alt={product.name} /></div>
+                    <h3>{product.name}</h3>
+                    <p>{product.subtitle}</p>
+                    <div><strong>{money(product.pricePaise)}</strong><button type="button" onClick={(event) => { event.stopPropagation(); add(product.id); }}>🛒</button></div>
+                  </article>
+                ))}
+              </section>
+            </>
+          )}
+
+          {activeTab === "orders" && (
+            <section className="accountScreen">
+              <div className="catalogTop"><h1>Orders</h1><p>Receipts, payments and order progress.</p></div>
+              {!sessionReady && <div className="accountEmpty">Connecting securely to Telegram…</div>}
+              {sessionReady && account?.orders.length ? account.orders.map((order) => (
+                <article className="orderCard" key={order.id}>
+                  <div><span>{order.receipt_code}</span><strong>{money(order.amount_paise)}</strong></div>
+                  <p>{order.tracking_code || "MR Mobiles order"}</p>
+                  <small>{order.status}{order.workflow_status ? " · " + order.workflow_status.replaceAll("_", " ") : ""}</small>
+                  <a href={order.receipt_url}>View receipt / PDF →</a>
+                </article>
+              )) : sessionReady ? <div className="accountEmpty">No Telegram orders yet.</div> : null}
+            </section>
+          )}
+
+          {activeTab === "profile" && (
+            <section className="accountScreen">
+              <div className="profileHero">
+                <div className="profileAvatar">MR</div>
+                <div><h1>My MR MOBILES</h1><p>Devices, repairs, warranties & MR Points</p></div>
+              </div>
+
+              {account && (
+                <div className="profileStats">
+                  <div><strong>{account.summary.loyaltyPoints}</strong><span>MR Points</span></div>
+                  <div><strong>{account.summary.activeRepairs}</strong><span>Active repairs</span></div>
+                  <div><strong>{account.summary.activeWarranties}</strong><span>Warranties</span></div>
+                  <div><strong>{account.summary.savedDevices}</strong><span>Devices</span></div>
+                </div>
+              )}
+
+              <div className="profileSection">
+                <h3>My devices</h3>
+                <div className="deviceList">
+                  {savedDevices.length ? savedDevices.map((device) => <span key={device}>📱 {device}</span>) : <p>Devices are saved automatically from repair history.</p>}
+                </div>
+              </div>
+
+              <div className="profileSection">
+                <h3>Repair history</h3>
+                {repairs.length ? repairs.map((ticket) => (
+                  <div className="repairItem" key={ticket.reference_code}>
+                    <strong>{[ticket.device_brand, ticket.device_model].filter(Boolean).join(" ")}</strong>
+                    <span>{ticket.reference_code} · {ticket.issue_or_condition}</span>
+                    <em>{ticket.status.replaceAll("_", " ")}</em>
+                  </div>
+                )) : <p>No Telegram repair history yet.</p>}
+              </div>
+
+              {paymentsEnabled && (
+                <div className="profileSection">
+                  <h3>Custom / test payment</h3>
+                  <div className="customPresets">
+                    {["1", "10", "100"].map((amount) => (
+                      <button type="button" key={amount} className={customAmount === amount ? "active" : ""} onClick={() => setCustomAmount(amount)}>₹{amount}</button>
+                    ))}
+                  </div>
+                  <div className="profilePaymentRow">
+                    <span>₹</span>
+                    <input value={customAmount} onChange={(event) => setCustomAmount(event.target.value.replace(/[^0-9.]/g, "").slice(0, 8))} />
+                    <button type="button" disabled={customLoading || !sessionReady} onClick={payCustomAmount}>{customLoading ? "Preparing…" : "Pay"}</button>
+                  </div>
+                </div>
+              )}
+            </section>
+          )}
+        </>
+      )}
+
+      {count > 0 && !selectedProduct && (
+        <section className="storeCartBar">
+          <div><span>{count} item{count === 1 ? "" : "s"}</span><strong>{money(total)}</strong></div>
+          <button data-checkout-button disabled={loading || !sessionReady} onClick={checkout}>
+            {loading ? "Preparing…" : paymentsEnabled ? "Checkout" : "Place order"}
+          </button>
         </section>
       )}
 
-      {paymentsEnabled && (
-        <section className="customPaymentPanel" aria-labelledby="custom-payment-title">
-          <div className="customPaymentHeading">
-            <div>
-              <span className="pill">Test payment</span>
-              <h2 id="custom-payment-title">Pay a custom amount</h2>
-              <p>Use ₹1 for a real end-to-end payment test without buying a product.</p>
-            </div>
-            <strong>₹</strong>
-          </div>
+      {message && <div className="storeToast" role="status">{message}</div>}
 
-          <div className="customPresets" aria-label="Quick custom amounts">
-            {["1", "10", "100"].map((amount) => (
-              <button
-                type="button"
-                key={amount}
-                className={customAmount === amount ? "active" : ""}
-                onClick={() => setCustomAmount(amount)}
-              >
-                ₹{amount}
-              </button>
-            ))}
-          </div>
-
-          <div className="customPaymentForm">
-            <label htmlFor="custom-amount">Amount in rupees</label>
-            <div>
-              <span>₹</span>
-              <input
-                id="custom-amount"
-                inputMode="decimal"
-                autoComplete="off"
-                value={customAmount}
-                onChange={(event) => setCustomAmount(event.target.value.replace(/[^0-9.]/g, "").slice(0, 8))}
-                placeholder="1"
-                aria-describedby="custom-payment-help"
-              />
-              <button
-                type="button"
-                disabled={customLoading || !sessionReady}
-                onClick={payCustomAmount}
-              >
-                {customLoading ? "Preparing…" : "Pay custom amount"}
-              </button>
-            </div>
-            <small id="custom-payment-help">Allowed: ₹1–₹10,000. Secure checkout opens on mrmobiles.in.</small>
-          </div>
-        </section>
+      {!selectedProduct && (
+        <nav className="storeBottomNav" aria-label="Main navigation">
+          {[
+            ["home", "⌂", "Home"],
+            ["categories", "▦", "Categories"],
+            ["search", "⌕", "Search"],
+            ["orders", "▣", "Orders"],
+            ["profile", "♙", "Profile"]
+          ].map(([value, icon, label]) => (
+            <button
+              type="button"
+              key={value}
+              className={activeTab === value ? "active" : ""}
+              onClick={() => {
+                setActiveTab(value as typeof activeTab);
+                setSelectedProductId(null);
+                if (value === "categories" && category === "all") setCategory("phone");
+                window.Telegram?.WebApp.HapticFeedback?.selectionChanged();
+              }}
+            >
+              <span>{icon}</span><small>{label}</small>
+            </button>
+          ))}
+        </nav>
       )}
-
-      <section className="checkoutBar">
-        <div>
-          <span>{count} item{count === 1 ? "" : "s"}</span>
-          <strong>{money(total)}</strong>
-        </div>
-        <button data-checkout-button disabled={loading || !sessionReady || count === 0} onClick={checkout}>
-          {loading ? "Preparing…" : paymentsEnabled ? "Pay securely" : "Place order"}
-        </button>
-      </section>
-
-      {message && <div className="status" role="status">{message}</div>}
-
-      <footer>
-        {paymentsEnabled
-          ? "Payments open on mrmobiles.in and are verified securely by the Mr Mobiles server."
-          : "Online payment is temporarily unavailable. Orders can still be placed securely through Telegram."}
-      </footer>
 
       <FloatingAiChat />
     </main>
-  );
+    );
 }
