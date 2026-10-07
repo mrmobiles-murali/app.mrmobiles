@@ -628,114 +628,6 @@ export default function Home() {
   }
 
   return (
-    <main className="shell">
-      <section className="hero heroUnified">
-        <div className="brandLockup" aria-label="Mr Mobiles">
-          <div className="brandWordmark">MR MOBILES</div>
-          <div className="eyebrow">CURATED TECH • TELEGRAM STORE</div>
-          <h1>Tech, styled better.</h1>
-          <p>Phones, accessories, smart wearables, audio and repair — presented like a premium showroom inside Telegram.</p>
-        </div>
-      </section>
-
-      <nav className="chips" aria-label="Product categories">
-        {[
-          ["all", "All"],
-          ["phone", "Phones"],
-          ["accessory", "Accessories"],
-          ["service", "Repair"]
-        ].map(([value, label]) => (
-          <button
-            key={value}
-            className={category === value ? "chip active" : "chip"}
-            onClick={() => {
-              setCategory(value as typeof category);
-              window.Telegram?.WebApp.HapticFeedback?.selectionChanged();
-            }}
-          >
-            {label}
-          </button>
-        ))}
-      </nav>
-
-      <section className="accountPanel">
-          <button className="accountToggle" onClick={() => setRepairsOpen((value) => !value)}>
-            <span>
-              <strong>My Mr Mobiles Account</strong>
-              <small>
-                {sessionReady
-                  ? `${account?.summary.orderCount ?? 0} orders · ${repairs.length} repairs · ${account?.summary.loyaltyPoints ?? 0} MR Points`
-                  : "Connecting securely to Telegram…"}
-              </small>
-            </span>
-            <span>{repairsOpen ? "−" : "+"}</span>
-          </button>
-          {repairsOpen && (
-            <div className="accountBody">
-              {!sessionReady && <p>Open this Mini App from Mr Mobiles in Telegram to load your private account.</p>}
-              {sessionReady && account && (
-                <>
-                  <h3>Account overview</h3>
-                  <div className="accountStats">
-                    <div><strong>{account.summary.loyaltyPoints}</strong><span>MR Points</span></div>
-                    <div><strong>{money(account.summary.paidSpendPaise)}</strong><span>Paid spend</span></div>
-                    <div><strong>{account.summary.activeRepairs}</strong><span>Active repairs</span></div>
-                    <div><strong>{account.summary.activeWarranties}</strong><span>Warranties</span></div>
-                  </div>
-                  <p className="accountNote">MR Points earn at 1 point per ₹100 of verified paid orders.</p>
-                  <h3>Recent orders & receipts</h3>
-                  {account.orders.length ? account.orders.slice(0, 5).map((order) => (
-                    <div className="repairItem" key={order.id}>
-                      <strong>{order.receipt_code}</strong>
-                      <span>{money(order.amount_paise)} · {order.status}{order.workflow_status ? ` · ${order.workflow_status.replaceAll("_", " ")}` : ""}</span>
-                      <em>{order.tracking_code || "Order receipt"}</em>
-                      <a className="receiptLink" href={order.receipt_url}>View receipt / PDF</a>
-                    </div>
-                  )) : <p>No Telegram orders yet.</p>}
-                  <h3>Service warranties</h3>
-                  {account.warranties.length ? account.warranties.map((warranty) => (
-                    <div className="repairItem" key={warranty.warranty_code}>
-                      <strong>🛡 {warranty.device_label}</strong>
-                      <span>{warranty.warranty_code} · Repair {warranty.repair_reference}</span>
-                      <em>Valid until {new Date(warranty.end_at).toLocaleDateString("en-IN")}</em>
-                      {warranty.note ? <span>{warranty.note}</span> : null}
-                    </div>
-                  )) : <p>No active service warranties.</p>}
-                </>
-              )}
-              <h3>Repair history</h3>
-              {sessionReady && repairs.length ? repairs.map((ticket) => (
-                <div className="repairItem" key={ticket.reference_code}>
-                  <strong>{[ticket.device_brand, ticket.device_model].filter(Boolean).join(" ")}</strong>
-                  <span>{ticket.reference_code} · {ticket.issue_or_condition}</span>
-                  <em>{ticket.status.replaceAll("_", " ")}</em>
-                </div>
-              )) : sessionReady ? <p>No Telegram repair history yet.</p> : null}
-              <h3>My devices</h3>
-              <div className="deviceList">
-                {sessionReady && savedDevices.length ? savedDevices.map((device) => <span key={device}>📱 {device}</span>) : sessionReady ? <p>Devices are saved automatically from repair history.</p> : null}
-              </div>
-              {sessionReady && (
-                <p className="accountNote">
-                  Service warranty dates shown above are issued by Mr Mobiles after a completed repair. Product warranty terms remain governed by the official bill/manufacturer terms.
-                </p>
-              )}
-            </div>
-          )}
-        </section>
-
-      <div className="catalogHeading">
-        <div>
-          <span className="eyebrow">VISUAL CATALOG</span>
-          <h2>{category === "all" ? "Featured collection" : category === "phone" ? "Phones" : category === "accessory" ? "Accessories & lifestyle tech" : "Service & repair"}</h2>
-        </div>
-        <span>{filtered.length} {filtered.length === 1 ? "item" : "items"}</span>
-      </div>
-
-      <section className="grid">
-        {filtered.map((product) => {
-          const qty = cart[product.id] || 0;
-          return (
     <main className="shell storeShell">
       <header className="storeTopbar">
         <div>
@@ -1000,4 +892,5 @@ export default function Home() {
 
       <FloatingAiChat />
     </main>
-  );}
+    );
+}
