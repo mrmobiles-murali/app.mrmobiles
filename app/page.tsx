@@ -311,18 +311,8 @@ export default function Home() {
   );
 
   function productVisual(product: StoreProduct) {
-    const exact: Record<string, string> = {
-      "iphone-13-pro-128": "https://mrmobiles.in/__mr_photo/iphone-13-pro-128",
-      "galaxy-s22-ultra-256": "https://mrmobiles.in/__mr_photo/galaxy-s22-ultra-256",
-      "pixel-7-128": "https://mrmobiles.in/__mr_photo/pixel-7-128",
-      "oneplus-11r-128": "https://mrmobiles.in/__mr_photo/oneplus-11r-128"
-    };
-    if (exact[product.id]) return exact[product.id];
     if (product.imageUrl) return product.imageUrl;
-    if (product.dailyVisualUrl) return product.dailyVisualUrl;
-    if (product.category === "accessory") return "https://mrmobiles.in/__mr_media/accessories";
-    if (product.category === "service") return "https://mrmobiles.in/__mr_media/repair";
-    return "https://mrmobiles.in/__mr_media/phones";
+    return `/api/showcase-image?id=${encodeURIComponent(product.id)}&category=${encodeURIComponent(product.category)}`;
   }
 
   function openCategory(nextCategory: typeof category) {
@@ -684,7 +674,7 @@ export default function Home() {
           {activeTab === "home" && (
             <>
               <section className="storeHero">
-                <img src="https://mrmobiles.in/__mr_photo/iphone-13-pro-128" alt="Featured smartphone" loading="eager" />
+                <img src="/api/showcase-image?id=hero" alt="Featured smartphone" loading="eager" />
                 <div className="storeHeroShade" />
                 <div className="storeHeroCopy">
                   <span>FEATURED TODAY</span>
@@ -723,7 +713,7 @@ export default function Home() {
               </section>
 
               <section className="homePromoStrip">
-                <img src="https://mrmobiles.in/__mr_media/repair" alt="Mobile repair service" />
+                <img src="/api/showcase-image?id=service&category=service" alt="Mobile repair service" />
                 <div><small>MR MOBILES REPAIR</small><h3>Expert diagnostics & repair</h3><p>Track every stage inside Telegram.</p></div>
                 <button type="button" onClick={() => openCategory("service")}>Book ›</button>
               </section>
