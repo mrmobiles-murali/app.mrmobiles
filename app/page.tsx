@@ -94,6 +94,7 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<"home" | "categories" | "search" | "orders" | "profile">("home");
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [selectedBrand, setSelectedBrand] = useState("All");
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -191,8 +192,8 @@ export default function Home() {
       const text = theme.text_color || (isLight ? "#111827" : "#f7f9fb");
       const muted = theme.hint_color || (isLight ? "#667085" : "#98a2ad");
       const line = theme.section_separator_color || (isLight ? "#dfe3e8" : "#252c34");
-      const accent = "#ff8a3d";
-      const accentText = "#180a02";
+      const accent = isLight ? "#b74725" : "#ffab85";
+      const accentText = isLight ? "#ffffff" : "#291109";
 
       root.style.colorScheme = tg.colorScheme;
       root.style.setProperty("--bg", bg);
@@ -284,8 +285,11 @@ export default function Home() {
   }, []);
 
   const filtered = useMemo(
-    () => category === "all" ? products : products.filter((p) => p.category === category),
-    [category, products]
+    () => products.filter((p) =>
+      (category === "all" || p.category === category) &&
+      (selectedBrand === "All" || [p.brand, p.name].filter(Boolean).join(" ").toLowerCase().includes(selectedBrand.toLowerCase()))
+    ),
+    [category, products, selectedBrand]
   );
 
   const selectedProduct = useMemo(
@@ -318,6 +322,7 @@ export default function Home() {
   function openCategory(nextCategory: typeof category) {
     setSelectedProductId(null);
     setCategory(nextCategory);
+    setSelectedBrand("All");
     setActiveTab("categories");
     window.Telegram?.WebApp.HapticFeedback?.selectionChanged();
   }
@@ -380,9 +385,12 @@ export default function Home() {
     const backButton = window.Telegram?.WebApp.BackButton;
     if (!backButton) return;
 
-    const handleBack = () => setCategory("all");
+    const handleBack = () => {
+      if (selectedProductId) setSelectedProductId(null);
+      else { setActiveTab("home"); setCategory("all"); setSelectedBrand("All"); }
+    };
 
-    if (category === "all") {
+    if (!selectedProductId && activeTab === "home") {
       backButton.hide();
       return () => backButton.hide();
     }
@@ -394,7 +402,7 @@ export default function Home() {
       backButton.offClick(handleBack);
       backButton.hide();
     };
-  }, [category]);
+  }, [activeTab, selectedProductId]);
 
   function maxQty(productId: string) {
     const product = products.find((item) => item.id === productId);
@@ -622,20 +630,18 @@ export default function Home() {
       <header className="storeTopbar">
         <div>
           <strong>MR MOBILES</strong>
-          <small>mini app</small>
+          <small>DEVICES · CARE · CONNECTION</small>
         </div>
-        <button type="button" aria-label="More options">•••</button>
+        <button type="button" aria-label="Search products" onClick={() => { setSelectedProductId(null); setActiveTab("search"); }}>⌕</button>
       </header>
 
       {selectedProduct ? (
         <section className="productDetailView">
           <button type="button" className="detailBack" onClick={() => setSelectedProductId(null)} aria-label="Back to products">←</button>
-          <button type="button" className="detailHeart" aria-label="Add to favourites">♡</button>
           <div className="detailVisual">
             <img src={productVisual(selectedProduct)} alt={selectedProduct.name} />
           </div>
           <div className="detailContent">
-            <span className="detailCounter">1/1</span>
             <h1>{selectedProduct.name}</h1>
             <p>{selectedProduct.subtitle}</p>
             <div className="detailPriceRow">
@@ -653,9 +659,7 @@ export default function Home() {
             <div className="detailOptionBlock">
               <label>Available configuration</label>
               <div className="storageChoices">
-                <button type="button" className="active">
-                  {selectedProduct.name.match(/\d+GB/)?.[0] || "Current stock"}
-                </button>
+                <span className="configurationValue">{selectedProduct.name.match(/\d+GB/)?.[0] || "Current stock"}</span>
               </div>
             </div>
 
@@ -685,7 +689,6 @@ export default function Home() {
                     if (hero) openProduct(hero);
                   }}>Explore Now →</button>
                 </div>
-                <div className="heroDots"><i /><i className="active" /><i /><i /></div>
               </section>
 
               <section className="quickCategories" aria-label="Quick categories">
@@ -696,18 +699,18 @@ export default function Home() {
               </section>
 
               <div className="storeSectionHeading">
-                <div><h2>Today&apos;s Picks</h2><p>Fresh choices for you</p></div>
+                <div><h2>Today&apos;s Picks</h2><p>Find your next everyday favourite</p></div>
                 <button type="button" onClick={() => openCategory("all")}>See All ›</button>
               </div>
 
               <section className="featuredGrid">
                 {homePhones.slice(0, 2).map((product) => (
-                  <article className="featuredCard" key={product.id} onClick={() => openProduct(product)}>
-                    <div className="featuredImage"><img src={productVisual(product)} alt={product.name} /></div>
+                  <article className="featuredCard" key={product.id}>
+                    <button type="button" className="featuredImage productOpen" aria-label={`View ${product.name}`} onClick={() => openProduct(product)}><img src={productVisual(product)} alt={product.name} /></button>
                     <small>{product.brand || "MR Mobiles"}</small>
                     <h3>{product.name}</h3>
                     <strong>{money(product.pricePaise)}</strong>
-                    <button type="button" onClick={(event) => { event.stopPropagation(); add(product.id); }}>→</button>
+                    <button type="button" aria-label={`Add ${product.name} to cart`} onClick={() => add(product.id)}>→</button>
                   </article>
                 ))}
               </section>
@@ -723,14 +726,14 @@ export default function Home() {
           {activeTab === "categories" && (
             <>
               <div className="catalogTop">
-                <h1>{category === "accessory" ? "Accessories" : category === "service" ? "Repairs" : "Mobiles"}</h1>
+                <h1>{category === "accessory" ? "Accessories" : category === "service" ? "Repairs" : category === "all" ? "All products" : "Mobiles"}</h1>
                 <p>{category === "accessory" ? "Cases, charging gear and everyday essentials." : category === "service" ? "Diagnostics, repair booking and service support." : "Top brands. Live stock. Best available deals."}</p>
               </div>
 
               {category !== "service" && (
                 <div className="brandRail">
-                  {["All", "Apple", "Samsung", "Google", "OnePlus"].map((brand, index) => (
-                    <button key={brand} type="button" className={index === 0 ? "active" : ""}>
+                  {["All", "Apple", "Samsung", "Google", "OnePlus"].map((brand) => (
+                    <button key={brand} type="button" className={selectedBrand === brand ? "active" : ""} aria-pressed={selectedBrand === brand} onClick={() => setSelectedBrand(brand)}>
                       <span>{brand === "Apple" ? "●" : brand === "Samsung" ? "S" : brand === "Google" ? "G" : brand === "OnePlus" ? "1+" : "✦"}</span>
                       <small>{brand}</small>
                     </button>
@@ -738,16 +741,14 @@ export default function Home() {
                 </div>
               )}
 
+              {!filtered.length && <p className="accountEmpty">No products in this selection. Try another brand.</p>}
               <section className="storeProductGrid">
                 {filtered.map((product) => (
-                  <article className="storeProductCard" key={product.id} onClick={() => openProduct(product)}>
-                    <div className="storeProductImage">
-                      <img src={productVisual(product)} alt={product.name} loading="lazy" />
-                      <button type="button" className="heart" aria-label="Favourite">♡</button>
-                    </div>
+                  <article className="storeProductCard" key={product.id}>
+                    <button type="button" className="storeProductImage productOpen" aria-label={`View ${product.name}`} onClick={() => openProduct(product)}><img src={productVisual(product)} alt={product.name} loading="lazy" /></button>
                     <h3>{product.name}</h3>
                     <p>{product.name.match(/\d+GB/)?.[0] || product.brand || "MR Mobiles"} · {typeof product.stockQty === "number" ? String(product.stockQty) + " in stock" : "Live stock"}</p>
-                    <div><strong>{money(product.pricePaise)}</strong><button type="button" onClick={(event) => { event.stopPropagation(); add(product.id); }}>🛒</button></div>
+                    <div><strong>{money(product.pricePaise)}</strong><button type="button" aria-label={`Add ${product.name} to cart`} onClick={() => add(product.id)}>🛒</button></div>
                   </article>
                 ))}
               </section>
@@ -759,15 +760,16 @@ export default function Home() {
               <div className="catalogTop"><h1>Search</h1><p>Find phones, accessories and repair services.</p></div>
               <label className="storeSearch">
                 <span>⌕</span>
-                <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search MR MOBILES" autoFocus />
+                <input aria-label="Search products" value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search MR MOBILES" autoFocus />
               </label>
+              {!searchedProducts.length && <p className="accountEmpty">No matches yet. Try a brand, model or repair service.</p>}
               <section className="storeProductGrid">
                 {searchedProducts.map((product) => (
-                  <article className="storeProductCard" key={product.id} onClick={() => openProduct(product)}>
-                    <div className="storeProductImage"><img src={productVisual(product)} alt={product.name} /></div>
+                  <article className="storeProductCard" key={product.id}>
+                    <button type="button" className="storeProductImage productOpen" aria-label={`View ${product.name}`} onClick={() => openProduct(product)}><img src={productVisual(product)} alt={product.name} /></button>
                     <h3>{product.name}</h3>
                     <p>{product.subtitle}</p>
-                    <div><strong>{money(product.pricePaise)}</strong><button type="button" onClick={(event) => { event.stopPropagation(); add(product.id); }}>🛒</button></div>
+                    <div><strong>{money(product.pricePaise)}</strong><button type="button" aria-label={`Add ${product.name} to cart`} onClick={() => add(product.id)}>🛒</button></div>
                   </article>
                 ))}
               </section>
@@ -833,7 +835,7 @@ export default function Home() {
                   </div>
                   <div className="profilePaymentRow">
                     <span>₹</span>
-                    <input value={customAmount} onChange={(event) => setCustomAmount(event.target.value.replace(/[^0-9.]/g, "").slice(0, 8))} />
+                    <input aria-label="Payment amount in rupees" inputMode="decimal" value={customAmount} onChange={(event) => setCustomAmount(event.target.value.replace(/[^0-9.]/g, "").slice(0, 8))} />
                     <button type="button" disabled={customLoading || !sessionReady} onClick={payCustomAmount}>{customLoading ? "Preparing…" : "Pay"}</button>
                   </div>
                 </div>
@@ -843,7 +845,7 @@ export default function Home() {
         </>
       )}
 
-      {count > 0 && !selectedProduct && (
+      {count > 0 && (
         <section className="storeCartBar">
           <div><span>{count} item{count === 1 ? "" : "s"}</span><strong>{money(total)}</strong></div>
           <button data-checkout-button disabled={loading || !sessionReady} onClick={checkout}>
@@ -867,10 +869,12 @@ export default function Home() {
               type="button"
               key={value}
               className={activeTab === value ? "active" : ""}
+              aria-current={activeTab === value ? "page" : undefined}
               onClick={() => {
                 setActiveTab(value as typeof activeTab);
                 setSelectedProductId(null);
                 if (value === "categories" && category === "all") setCategory("phone");
+                setSelectedBrand("All");
                 window.Telegram?.WebApp.HapticFeedback?.selectionChanged();
               }}
             >
