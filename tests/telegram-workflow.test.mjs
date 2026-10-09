@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { handleBotUpdate, derivedWebhookSecret, matchesSecret, miniAppUrl, adminIds } from "../lib/telegram-workflow.ts";
+import { handleBotUpdate, derivedWebhookSecret, matchesSecret, miniAppUrl, adminIds, businessCompatibleMessageBody } from "../lib/telegram-workflow.ts";
 
 function message(text, extra = {}) {
   return { update_id: 123, message: { chat: { id: 42, type: "private" }, from: { id: 42, first_name: "Customer" }, text, ...extra } };
@@ -1050,4 +1050,28 @@ test("admin can decline a new repair from the ticket controls", async () => {
     note: "Mr Mobiles declined this repair request."
   });
   assert.equal(calls.some(call => /updated to rejected/i.test(String(call.body?.text || ""))), true);
+});
+
+
+test("Business messages convert Web App buttons to URL buttons", () => {
+  const original = {
+    chat_id: 42,
+    text: "Open Mr Mobiles",
+    reply_markup: {
+      inline_keyboard: [[
+        { text: "Shop", web_app: { url: "https://app.mrmobiles.in/" } },
+        { text: "Support", callback_data: "human_support" }
+      ]]
+    }
+  };
+  const compatible = businessCompatibleMessageBody(original);
+  assert.deepEqual(compatible.reply_markup.inline_keyboard[0][0], {
+    text: "Shop",
+    url: "https://app.mrmobiles.in/"
+  });
+  assert.deepEqual(compatible.reply_markup.inline_keyboard[0][1], {
+    text: "Support",
+    callback_data: "human_support"
+  });
+  assert.equal(original.reply_markup.inline_keyboard[0][0].web_app.url, "https://app.mrmobiles.in/");
 });
