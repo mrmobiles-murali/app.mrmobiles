@@ -260,6 +260,34 @@ function callbackData(prefix: string, value: string): string | null {
   return Buffer.byteLength(data, "utf8") <= 64 ? data : null;
 }
 
+/**
+ * Telegram Business messages reject Web App inline buttons with
+ * BUTTON_TYPE_INVALID. Preserve the destination as a normal HTTPS URL button
+ * while keeping callback and other supported buttons unchanged.
+ */
+export function businessCompatibleMessageBody(body: Record<string, unknown>): Record<string, unknown> {
+  const replyMarkup = body.reply_markup as { inline_keyboard?: unknown } | undefined;
+  if (!replyMarkup || !Array.isArray(replyMarkup.inline_keyboard)) return body;
+
+  let changed = false;
+  const inlineKeyboard = replyMarkup.inline_keyboard.map((row) => {
+    if (!Array.isArray(row)) return row;
+    return row.map((button) => {
+      if (!button || typeof button !== "object") return button;
+      const candidate = button as Record<string, unknown>;
+      const webApp = candidate.web_app as { url?: unknown } | undefined;
+      if (!webApp || typeof webApp.url !== "string") return button;
+      changed = true;
+      const { web_app: _webApp, ...rest } = candidate;
+      return { ...rest, url: webApp.url };
+    });
+  });
+
+  return changed
+    ? { ...body, reply_markup: { ...replyMarkup, inline_keyboard: inlineKeyboard } }
+    : body;
+}
+
 function aiKeyboard(context: BotContext, products: InlineProduct[], responseId?: number) {
   const rows: Array<Array<Record<string, unknown>>> = [];
   const visible = products.slice(0, 2);
