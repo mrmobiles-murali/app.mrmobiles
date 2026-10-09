@@ -3,7 +3,7 @@ import { analyzeRepairPhoto, answerBusinessQuestion, aiRuntimeConfigured } from 
 import { getInventoryProductsByIds, searchInventoryProducts } from "@/lib/server-catalog";
 import { approveRepairQuote, cancelTelegramRepairTicket, createTelegramRepairTicket, getTelegramRepairTicket, listTelegramRepairTickets, REPAIR_STATUSES, updateRepairTicket } from "@/lib/repair-tickets";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
-import { adminIds, BOT_COMMANDS, BOT_WORKFLOW_VERSION, derivedWebhookSecret, handleBotUpdate, matchesSecret, miniAppUrl, versionedMiniAppUrl, repairRushGameUrl, isRepairRushUpdate, REPAIR_RUSH_SHORT_NAME, REPAIR_RUSH_BOT_USERNAME } from "@/lib/telegram-workflow";
+import { adminIds, BOT_COMMANDS, BOT_WORKFLOW_VERSION, businessCompatibleMessageBody, derivedWebhookSecret, handleBotUpdate, matchesSecret, miniAppUrl, versionedMiniAppUrl, repairRushGameUrl, isRepairRushUpdate, REPAIR_RUSH_SHORT_NAME, REPAIR_RUSH_BOT_USERNAME } from "@/lib/telegram-workflow";
 
 const MINI_APP_URL = "https://mrmobiles.in";
 export const runtime = "nodejs";
@@ -278,9 +278,12 @@ export async function POST(request: NextRequest) {
     const businessChatId = Number(businessMessage?.chat?.id);
     const callTelegram = async (method: string, body: Record<string, unknown>) => {
       const sameBusinessChat = Number.isSafeInteger(businessChatId) && Number(body.chat_id) === businessChatId;
-      const businessAwareBody = businessConnectionId && sameBusinessChat && ["sendMessage", "sendChatAction"].includes(method)
-        ? { ...body, business_connection_id: businessConnectionId }
+      const compatibleBody = businessConnectionId && sameBusinessChat && method === "sendMessage"
+        ? businessCompatibleMessageBody(body)
         : body;
+      const businessAwareBody = businessConnectionId && sameBusinessChat && ["sendMessage", "sendChatAction"].includes(method)
+        ? { ...compatibleBody, business_connection_id: businessConnectionId }
+        : compatibleBody;
       const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(businessAwareBody), cache: "no-store", signal: AbortSignal.timeout(12000)
