@@ -164,6 +164,13 @@ export default function Home() {
     const deepLinkMatch = typeof startParam === "string"
       ? startParam.match(/^(view|buy)_([A-Za-z0-9_-]{1,58})$/)
       : null;
+    const repairDeepLinkMatch = typeof startParam === "string"
+      ? startParam.match(/^repair_(MRR-[A-F0-9]{10})$/i)
+      : null;
+    if (repairDeepLinkMatch) {
+      setRepairPaymentRef(repairDeepLinkMatch[1].toUpperCase());
+      setRepairsOpen(true);
+    }
     if (deepLinkMatch) {
       const [, action, productId] = deepLinkMatch;
       fetch("/api/catalog")
