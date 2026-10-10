@@ -279,7 +279,7 @@ export async function POST(request: NextRequest) {
     const callTelegram = async (method: string, body: Record<string, unknown>) => {
       const sameBusinessChat = Number.isSafeInteger(businessChatId) && Number(body.chat_id) === businessChatId;
       const compatibleBody = businessConnectionId && sameBusinessChat && method === "sendMessage"
-        ? businessCompatibleMessageBody(body)
+        ? businessCompatibleMessageBody(body, botUsername)
         : body;
       const businessAwareBody = businessConnectionId && sameBusinessChat && ["sendMessage", "sendChatAction"].includes(method)
         ? { ...compatibleBody, business_connection_id: businessConnectionId }
@@ -300,6 +300,7 @@ export async function POST(request: NextRequest) {
     let botUsername: string | undefined;
     const needsBotUsername =
       Boolean((normalizedUpdate as any)?.inline_query) ||
+      Boolean(businessMessage) ||
       isRepairRushUpdate(normalizedUpdate) ||
       incomingCommand === "/refer" ||
       (normalizedUpdate as any)?.callback_query?.data === "refer_link";
