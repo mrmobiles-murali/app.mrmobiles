@@ -5,6 +5,7 @@ export type Product = {
   pricePaise: number;
   category: "phone" | "accessory" | "service";
   emoji: string;
+  brand?: string | null;
 };
 
 export const catalog: Product[] = [
@@ -14,7 +15,8 @@ export const catalog: Product[] = [
     subtitle: "Pre-owned • Confirm live stock, condition & battery health",
     pricePaise: 5299900,
     category: "phone",
-    emoji: "📱"
+    emoji: "📱",
+    brand: "Apple"
   },
   {
     id: "iphone-12-64",
@@ -22,7 +24,8 @@ export const catalog: Product[] = [
     subtitle: "Pre-owned • Confirm live stock, condition & battery health",
     pricePaise: 2849900,
     category: "phone",
-    emoji: "📱"
+    emoji: "📱",
+    brand: "Apple"
   },
   {
     id: "iphone-11-128",
@@ -30,7 +33,8 @@ export const catalog: Product[] = [
     subtitle: "Pre-owned • Confirm live stock, condition & battery health",
     pricePaise: 1999900,
     category: "phone",
-    emoji: "📱"
+    emoji: "📱",
+    brand: "Apple"
   },
   {
     id: "galaxy-s22-ultra-256",
@@ -38,7 +42,8 @@ export const catalog: Product[] = [
     subtitle: "Pre-owned • 256GB • Confirm live stock & condition",
     pricePaise: 4499900,
     category: "phone",
-    emoji: "📱"
+    emoji: "📱",
+    brand: "Samsung"
   },
   {
     id: "oneplus-11r-128",
@@ -46,7 +51,8 @@ export const catalog: Product[] = [
     subtitle: "Pre-owned • 128GB • Confirm live stock & condition",
     pricePaise: 2199900,
     category: "phone",
-    emoji: "📱"
+    emoji: "📱",
+    brand: "OnePlus"
   },
   {
     id: "pixel-7-128",
@@ -54,7 +60,8 @@ export const catalog: Product[] = [
     subtitle: "Pre-owned • Confirm live stock, condition & battery health",
     pricePaise: 2649900,
     category: "phone",
-    emoji: "📱"
+    emoji: "📱",
+    brand: "Google"
   },
   {
     id: "magnetic-case",
