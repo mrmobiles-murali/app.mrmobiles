@@ -6,7 +6,7 @@ import { Script } from "node:vm";
 const html = readFileSync(new URL("../public/liquid-store.html", import.meta.url), "utf8");
 
 test("Liquid Glass inline scripts parse without syntax errors", () => {
-  const scripts = [...html.matchAll(/<script\\b[^>]*>([\\s\\S]*?)<\\/script>/gi)]
+  const scripts = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)]
     .map((match) => match[1])
     .filter((script) => script.trim());
   assert.ok(scripts.length >= 3, "Expected config, storefront and API bridge scripts");
