@@ -1983,8 +1983,10 @@
           id:p.id,name:escapeHtml(p.name),brand:escapeHtml(p.brand||p.name.split(" ")[0]),
           category:p.category==="phone"?"Mobiles":p.category==="accessory"?"Accessories":"Service",
           price:Math.round(p.pricePaise/100),originalPrice:Math.round(p.pricePaise/100),
-          image:imagePath(p.imageUrl||photoReferences.find(photo=>p.name.toLowerCase().includes(photo.name))?.image||p.dailyVisualUrl,
-             ("/api/showcase-image?id="+encodeURIComponent(p.id)+"&category="+encodeURIComponent(p.category||"phone"))),
+          image:imagePath(p.imageUrl,
+             photoReferences.find(photo=>p.name.toLowerCase().includes(photo.name))?.image
+             ||imagePath(p.dailyVisualUrl,"/api/showcase-image?id="+encodeURIComponent(p.id)
+             +"&category="+encodeURIComponent(p.category||"phone"))),
           condition:escapeHtml(p.subtitle||"Details confirmed before purchase"),
           batteryHealth:"Condition confirmed before purchase",
           inStock:p.stockQty===null||p.stockQty===undefined||p.stockQty>0,
@@ -1999,7 +2001,7 @@
       dailyOffers.splice(0,dailyOffers.length,...normalized.slice(0,3).map(p=>
         "📱 "+p.name+" · ₹"+p.price.toLocaleString("en-IN")+" · Check current stock at MR MOBILES Hosur"));
       setOffer(0);
-      const first=normalized[0];
+      const first=normalized.find(p=>p.category==="Mobiles")||normalized[0];
       $("heroTitle").textContent=first.name;
       $("heroSubtitle").textContent="From the current Mr Mobiles catalogue. Device condition and stock are confirmed before checkout.";
       $("heroPrice").textContent="₹"+first.price.toLocaleString("en-IN");
