@@ -1921,6 +1921,7 @@
 <script src="https://telegram.org/js/telegram-web-app.js?63"></script>
 <style>
   #productGrid { opacity:0;pointer-events:none;transition:opacity .2s ease; }
+  #productGrid .line-through, #specOldPrice { display:none!important; }
   #dailyHeroSection { display:none; }
   #pwaBannerCard, #btnFeedSettings,
   #btnWhatsappStore, #btnWhatsappCartCheckout, #btnWhatsappTrackCode,
@@ -1937,6 +1938,8 @@
     tg?.HapticFeedback?.impactOccurred?.("light");
   } catch (_) {}
   $("pwaStatusText").textContent = "Hosur • Live inventory sync";
+  const proceed=$("btnProceedCheckout");
+  if(proceed)proceed.textContent="Continue to secure Telegram checkout";
   const offerStrip = $("offerStripHeadline")?.closest(".glass-card");
   if (offerStrip) offerStrip.style.display = "none";
   const countdown = $("heroCountdownTimer");
