@@ -182,7 +182,7 @@
           DAILY OFFER
         </span>
         <p id="offerStripHeadline" class="text-slate-200 font-medium truncate transition-all duration-300">
-          ⚡ Flat ₹4,000 Exchange Bonus on iPhone 13 & 14 Series today at Tank St, Hosur
+          📱 Explore MR MOBILES smartphones, accessories and repair services
         </p>
       </div>
       <div class="flex items-center gap-1.5 pl-2 flex-shrink-0">
@@ -1025,9 +1025,9 @@
     ];
 
     const dailyOffers = [
-      '⚡ Flat ₹4,000 Exchange Bonus on iPhone 13 & 14 Series today at Tank St, Hosur',
-      '🎁 Store Special: Free 65W GaN Dual Fast Charger with any flagship purchase today',
-      '🛡️ 180-Day Comprehensive Warranty included on all pre-owned certified devices'
+      '📱 Explore the latest phones and accessories at MR MOBILES Hosur',
+      '🛠️ Book device repair inspection and track updates securely',
+      '✅ Final stock, condition, offers and warranty confirmed by the store'
     ];
     let currentOfferIndex = 0;
 
@@ -1941,7 +1941,7 @@
   const proceed=$("btnProceedCheckout");
   if(proceed)proceed.textContent="Continue to secure Telegram checkout";
   const offerStrip = $("offerStripHeadline")?.closest(".glass-card");
-  if (offerStrip) offerStrip.style.display = "none";
+  if (offerStrip) offerStrip.style.display = "";
   const countdown = $("heroCountdownTimer");
   if (countdown?.parentElement) countdown.parentElement.style.display="none";
   $("trackTimelineSteps").replaceChildren();
@@ -1950,8 +1950,9 @@
   $("trackResultSummary").textContent = "Tracking is private: both reference code and phone number are required.";
   document.querySelectorAll(".sample-code-btn").forEach(button => button.remove());
   $("exEstimateValue").textContent = "Price confirmed after physical inspection";
-  const escapeHtml = (v) => String(v??"").replace(/[&<>"\x27]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"'":"&quot;","\x27":"&#39;"}[c]||""));
+  const escapeHtml = (v) => String(v??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");
   const imagePath = (v,fallback) => {const url=String(v||"");return escapeHtml(/^(https:\/\/|\/(?!\/))/i.test(url)?url:fallback);};
+  const photoReferences = catalog.filter(p=>p?.image?.startsWith("data:image/jpeg;base64,")).map(p=>({name:String(p.name||"").toLowerCase(),image:p.image}));
   const safeStatus = (msg) => { try { showToast(String(msg).slice(0,180)); } catch (_) { alert(String(msg)); } };
   const activeSubmit = (form, busy) => {
     const btn = form.querySelector('[type="submit"]');
@@ -1982,7 +1983,9 @@
           id:p.id,name:escapeHtml(p.name),brand:escapeHtml(p.brand||p.name.split(" ")[0]),
           category:p.category==="phone"?"Mobiles":p.category==="accessory"?"Accessories":"Service",
           price:Math.round(p.pricePaise/100),originalPrice:Math.round(p.pricePaise/100),
-          image:imagePath(p.imageUrl||p.dailyVisualUrl,("/api/showcase-image?id="+encodeURIComponent(p.id)
+          image:imagePath(p.imageUrl,
+             photoReferences.find(photo=>p.name.toLowerCase().includes(photo.name))?.image
+             ||imagePath(p.dailyVisualUrl,"/api/showcase-image?id="+encodeURIComponent(p.id)
              +"&category="+encodeURIComponent(p.category||"phone"))),
           condition:escapeHtml(p.subtitle||"Details confirmed before purchase"),
           batteryHealth:"Condition confirmed before purchase",
@@ -1994,7 +1997,11 @@
       const allowed=new Set(normalized.map(p=>p.id));
       cart=Array.isArray(cart)?cart.filter(item=>allowed.has(item.id)):[];
       saveCart();renderProducts();updateCartUI();
-      const first=normalized[0];
+      // Replace the static promotional claims with real inventory-based highlights.
+      dailyOffers.splice(0,dailyOffers.length,...normalized.slice(0,3).map(p=>
+        "📱 "+p.name+" · ₹"+p.price.toLocaleString("en-IN")+" · Check current stock at MR MOBILES Hosur"));
+      setOffer(0);
+      const first=normalized.find(p=>p.category==="Mobiles")||normalized[0];
       $("heroTitle").textContent=first.name;
       $("heroSubtitle").textContent="From the current Mr Mobiles catalogue. Device condition and stock are confirmed before checkout.";
       $("heroPrice").textContent="₹"+first.price.toLocaleString("en-IN");
@@ -2022,6 +2029,8 @@
       grid.innerHTML='<p class="glass-card rounded-2xl p-4 text-sm text-amber-300">Live products are temporarily unavailable. Please use the Mr Mobiles Telegram bot for assistance.</p>';
       grid.style.opacity="1";
       grid.style.pointerEvents="none";
+      dailyOffers.splice(0,dailyOffers.length,"Browse smartphones, accessories and repairs at MR MOBILES Hosur");
+      setOffer(0);
       $("pwaStatusText").textContent="Catalogue temporarily unavailable";
       safeStatus(err.message||"Could not load live catalogue");
     }
