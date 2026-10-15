@@ -1,10 +1,10 @@
 # REA 6.5.0 integration plan — Mr Mobiles
 
-**Status:** Preparation only; no live MCP registration or production deployment is implied by this document.
+**Status (2026-10-15):** User verified a **live REA v6.5.0 ↔ Codex CLI v0.162.1 connection** on Ubuntu 26.04 ARM64 under Termux/PRoot. REA standalone MCP doctor reported `healthy: true`, `207/207 tools`, `6/6 prompts` and a successful `binary_session` request. Codex `/mcp` reported `rea: connected (207 tools)` and subsequently called `rea.binary_session` successfully. This GitHub PR remains a **review-only integration artifact**; no merge, GitHub workflow run or production deployment is implied.
 
 Upstream source: [morluto/rea release rea-agents-6.5.0](https://github.com/morluto/rea/releases/tag/rea-agents-6.5.0).
 REA is a **local stdio MCP server**, not a hosted website or a GitHub repository connection. Each coding-client host needs its own installation/registration.
-Version is intentionally pinned to `6.5.0` (not `latest`). npm package availability must be checked first.
+Version is intentionally pinned to `6.5.0` (not `latest`). npm availability was verified on the user's Termux setup; check the package again on any new host.
 
 ## Prerequisites (every local host)
 
@@ -33,7 +33,35 @@ npx -y rea-agents@6.5.0 setup --client codex
 npx -y rea-agents@6.5.0 doctor --client codex --json
 ```
 
-Restart Codex and confirm the `rea` MCP tools appear. `doctor` checks local files and prerequisites, not the already-running client's MCP connection. Local REA installation is **not** automatic just because GitHub is connected to ChatGPT.
+Restart Codex and confirm the `rea` MCP tools appear. `doctor` checks local files and prerequisites, not the already-running client's MCP connection. Local REA installation is **not** automatic just because GitHub is connected to ChatGPT. On the user's Android/PRoot host, the Codex *daemon* fails to start; use the verified non-daemon launcher documented below.
+
+## Verified Android Ubuntu PRoot launcher (next user-side step)
+
+Ubuntu 26.04 ARM64 environment: Node.js 22.22.1, npm 9.2.0, Codex CLI 0.162.1, REA 6.5.0. This is the user's actual verified host; additional native providers may still be unavailable on ARM64.
+
+The following **session** command worked with Codex, where bare `codex` initially failed to connect to `app-server-control.sock` and REA had failed its Codex MCP startup before the timeout extension:
+
+```sh
+codex --no-daemon \
+  -c 'mcp_servers.rea.startup_timeout_sec=60' \
+  -c 'mcp_optional_startup_grace_ms=30000'
+```
+
+For convenient recurring use, this PR supplies [`scripts/codex-rea-termux.sh`](../scripts/codex-rea-termux.sh), which runs the **same verified command** and forwards any arguments. It is a wrapper, not a persistent background daemon. After reviewing the script, install a private copy inside the Ubuntu environment, using this branch's raw file:
+
+```sh
+mkdir -p "$HOME/.local/bin"
+curl -fsSL 'https://raw.githubusercontent.com/mrmobiles-murali/app.mrmobiles/integrations/rea-6-5-0-readiness/scripts/codex-rea-termux.sh' \
+  -o "$HOME/.local/bin/codex-rea"
+chmod 755 "$HOME/.local/bin/codex-rea"
+"$HOME/.local/bin/codex-rea"
+```
+
+Once Codex opens, enter `/mcp` and verify `rea: connected (207 tools)`. For permanent command-line convenience, add `export PATH="$HOME/.local/bin:$PATH"` to `~/.bashrc` **only if that line is not already present**. In future Ubuntu sessions, run `codex-rea`.
+
+**Persistent MCP startup timeout (optional):** Back up `/root/.codex/config.toml` and insert `startup_timeout_sec = 60` within the existing `[mcp_servers.rea]` table if not present. This keeps the REA startup allowance for other Codex launches. Do not append the key to the wrong TOML section or duplicate it. The wrapper above avoids altering the original config and also bypasses the Android/PRoot daemon problem.
+
+Keep REA pinned to `rea-agents@6.5.0`. Do not install Hopper or Ghidra on Android/ARM64 merely to satisfy optional diagnostics. Disable app access to sensitive store credentials unless explicitly needed and approved.
 
 ## GitHub Copilot CLI (optional local coding client)
 
@@ -74,11 +102,12 @@ The GitHub connector in ChatGPT lets the assistant read/update accessible reposi
 
 ## Acceptance and rollback
 
-- [ ] Confirm `rea-agents@6.5.0` actually exists in npm.
+- [x] Confirm `rea-agents@6.5.0` is available on the user's Termux/npm installation.
 - [ ] Run manual GitHub readiness check and record output.
-- [ ] Codex local `doctor --client codex` and active REA tool discovery succeed.
-- [ ] Check Termux Node version and host/provider compatibility separately.
-- [ ] Connect ChatGPT only using a supported, secured remote-MCP app path if one becomes available and is explicitly authorized.
+- [x] Codex registration and skill were aligned; REA MCP doctor and live Codex `rea.binary_session` succeeded.
+- [x] Verify Termux and Ubuntu PRoot Node version and host/provider limitations (Linux ARM64, optional native providers unavailable).
+- [ ] User-side: install/verify a convenient `codex-rea` launcher and confirm it starts a new session.
+- [ ] ChatGPT direct MCP **paused at user request**; consider a secure supported path only with new authorization.
 - [ ] Keep Vercel/Cloudflare/Razorpay/Telegram production untouched.
 
 To remove local REA-owned Codex registration/skill, review `npx -y rea-agents@6.5.0 uninstall` **before** confirming. Uninstall may affect other REA client registrations on that host; read upstream scope details.
