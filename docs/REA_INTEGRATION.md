@@ -58,7 +58,7 @@ Only if Node is compatible and npm exposes the pinned package, run a limited rea
 npx -y rea-agents@6.5.0 doctor --json
 ```
 
-The doctor report may show missing native providers even when a non-native workflow is possible. Keep the existing Telegram bot, Vercel, Raspberry/Cloudflare DNS, and payment services unchanged. Use a supported x64 Linux/macOS/Windows workstation for native REA analysis when necessary. No installation on the user's phone is performed by merging this document.
+The doctor report may show missing native providers even when a non-native workflow is possible. Keep the existing Telegram bot, Vercel, Cloudflare DNS, and payment services unchanged. Use a supported x64 Linux/macOS/Windows workstation for native REA analysis when necessary. No installation on the user's phone is performed by merging this document.
 
 ## MR MOBILES GitHub (this repository)
 
@@ -70,7 +70,7 @@ If performing a real static JavaScript investigation, first build or supply a su
 
 ## ChatGPT app and MCP
 
-The GitHub connector in ChatGPT lets the assistant read/update accessible repositories; **it does not automatically install arbitrary local MCP servers**. REA's local stdio MCP protocol cannot be registered directly through the existing GitHub connection. A supported and properly authenticated remote-MCP app/bridge would be a separate deployment and security decision. Do **not** publicly expose REA or a local file-analysis MCP endpoint just to connect it to ChatGPT.
+The GitHub connector in ChatGPT lets the assistant read/update accessible repositories; **it does not automatically install arbitrary local MCP servers**. REA's local stdio MCP protocol cannot be registered directly through the existing GitHub connection. ChatGPT custom MCP connections are plan/workspace dependent and configured on the **web**, not the Android app. Where custom MCP connections are permitted, ChatGPT requires a remote HTTPS MCP endpoint or a supported **Secure MCP Tunnel**; its GitHub connector cannot substitute for one. REA runs a local stdio MCP server, so a compatible secured adapter/tunnel would need to be designed and approved separately. Do **not** publicly expose REA or a local file-analysis MCP endpoint just to connect it to ChatGPT. See [OpenAI: connecting custom MCP servers](https://help.openai.com/en/articles/12584461-connecting-custom-mcp-servers-in-chatgpt).
 
 ## Acceptance and rollback
 
