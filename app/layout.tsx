@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Script from "next/script";
 import { Manrope, Sora } from "next/font/google";
 import "./globals.css";
+import "./website.css";
 
 const manrope = Manrope({
   subsets: ["latin"],
@@ -16,8 +17,8 @@ const sora = Sora({
 });
 
 export const metadata: Metadata = {
-  title: "Mr Mobiles",
-  description: "Mr Mobiles Telegram Mini App"
+  title: "MR MOBILES — Good devices. No games.",
+  description: "Certified mobile devices, accessories and repair support from Mr Mobiles, Hosur."
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
