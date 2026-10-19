@@ -265,29 +265,7 @@ function callbackData(prefix: string, value: string): string | null {
  * BUTTON_TYPE_INVALID. Preserve the destination as a normal HTTPS URL button
  * while keeping callback and other supported buttons unchanged.
  */
-function businessMiniAppLink(rawUrl: string, botUsername?: string): string {
-  if (!botUsername || !/^[A-Za-z0-9_]{5,32}$/.test(botUsername)) return rawUrl;
-
-  let startParam = "shop";
-  try {
-    const appUrl = new URL(rawUrl);
-    const repairRef = String(appUrl.searchParams.get("repair_ref") || "").toUpperCase();
-    const productId = String(appUrl.searchParams.get("product") || "");
-    if (/^MRR-[A-F0-9]{10}$/.test(repairRef)) {
-      startParam = `repair_${repairRef}`;
-    } else if (/^[A-Za-z0-9_-]{1,58}$/.test(productId)) {
-      startParam = `${appUrl.searchParams.get("buy") === "1" ? "buy" : "view"}_${productId}`;
-    }
-  } catch {
-    return rawUrl;
-  }
-
-  const deepLink = new URL(`https://t.me/${botUsername}`);
-  deepLink.searchParams.set("startapp", startParam.slice(0, 64));
-  return deepLink.toString();
-}
-
-export function businessCompatibleMessageBody(body: Record<string, unknown>, botUsername?: string): Record<string, unknown> {
+export function businessCompatibleMessageBody(body: Record<string, unknown>): Record<string, unknown> {
   const replyMarkup = body.reply_markup as { inline_keyboard?: unknown } | undefined;
   if (!replyMarkup || !Array.isArray(replyMarkup.inline_keyboard)) return body;
 
@@ -301,7 +279,7 @@ export function businessCompatibleMessageBody(body: Record<string, unknown>, bot
       if (!webApp || typeof webApp.url !== "string") return button;
       changed = true;
       const { web_app: _webApp, ...rest } = candidate;
-      return { ...rest, url: businessMiniAppLink(webApp.url, botUsername) };
+      return { ...rest, url: webApp.url };
     });
   });
 

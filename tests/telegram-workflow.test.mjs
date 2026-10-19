@@ -1053,7 +1053,7 @@ test("admin can decline a new repair from the ticket controls", async () => {
 });
 
 
-test("Business messages convert Web App buttons to authenticated Mini App deep links", () => {
+test("Business messages convert Web App buttons to URL buttons", () => {
   const original = {
     chat_id: 42,
     text: "Open Mr Mobiles",
@@ -1064,34 +1064,14 @@ test("Business messages convert Web App buttons to authenticated Mini App deep l
       ]]
     }
   };
-  const compatible = businessCompatibleMessageBody(original, "MrMobileDoctor_bot");
+  const compatible = businessCompatibleMessageBody(original);
   assert.deepEqual(compatible.reply_markup.inline_keyboard[0][0], {
     text: "Shop",
-    url: "https://t.me/MrMobileDoctor_bot?startapp=shop"
+    url: "https://app.mrmobiles.in/"
   });
   assert.deepEqual(compatible.reply_markup.inline_keyboard[0][1], {
     text: "Support",
     callback_data: "human_support"
   });
   assert.equal(original.reply_markup.inline_keyboard[0][0].web_app.url, "https://app.mrmobiles.in/");
-});
-
-test("Business product and repair buttons preserve their Mini App destination", () => {
-  const body = {
-    reply_markup: {
-      inline_keyboard: [[
-        { text: "Buy", web_app: { url: "https://app.mrmobiles.in/?product=iphone-13-pro-128&buy=1" } },
-        { text: "Pay", web_app: { url: "https://app.mrmobiles.in/?repair_ref=MRR-ABCDEF1234" } }
-      ]]
-    }
-  };
-  const compatible = businessCompatibleMessageBody(body, "MrMobileDoctor_bot");
-  assert.equal(compatible.reply_markup.inline_keyboard[0][0].url, "https://t.me/MrMobileDoctor_bot?startapp=buy_iphone-13-pro-128");
-  assert.equal(compatible.reply_markup.inline_keyboard[0][1].url, "https://t.me/MrMobileDoctor_bot?startapp=repair_MRR-ABCDEF1234");
-});
-
-test("Business button conversion keeps the HTTPS fallback without a bot username", () => {
-  const body = { reply_markup: { inline_keyboard: [[{ text: "Shop", web_app: { url: "https://app.mrmobiles.in/" } }]] } };
-  const compatible = businessCompatibleMessageBody(body);
-  assert.equal(compatible.reply_markup.inline_keyboard[0][0].url, "https://app.mrmobiles.in/");
 });
