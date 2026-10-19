@@ -1,0 +1,24 @@
+name: REA readiness (manual)
+
+# On-demand, isolated package/CLI verification. No production deployment.
+on:
+  workflow_dispatch:
+
+# Neither source nor secrets are needed; grant no repository permissions.
+permissions: {}
+
+jobs:
+  cli-readiness:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Set up a compatible Node.js runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.11.0'
+
+      - name: Verify pinned REA package is published
+        run: npm view rea-agents@6.5.0 version
+
+      - name: Verify pinned REA CLI starts
+        run: npx --yes rea-agents@6.5.0 --help
