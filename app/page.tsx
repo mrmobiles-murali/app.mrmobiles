@@ -107,6 +107,7 @@ export default function Home() {
             <a href="#stock">Stock</a>
             <a href="#services">Services</a>
             <a href="#why-mr">Why MR</a>
+            <a href="https://t.me/MrMobileDoctor_bot?start=support" target="_blank" rel="noreferrer">Support Bot</a>
           </nav>
           <button className="reframeCartButton" type="button" onClick={() => setCartOpen(true)} aria-label={"Open cart with " + cartCount + " items"}>
             <span className="reframeCartDot">{cartCount}</span>
@@ -124,6 +125,7 @@ export default function Home() {
             <div className="reframeActions">
               <a className="reframeButton reframeButtonSolid" href="#stock">See what&apos;s in</a>
               <a className="reframeButton reframeButtonGhost" href="/upgrade">Fix my device <span>↗</span></a>
+              <a className="reframeButton reframeButtonGhost" href="https://t.me/MrMobileDoctor_bot?start=support" target="_blank" rel="noreferrer">Ask support bot <span>↗</span></a>
             </div>
             <div className="reframeHeroMeta">
               <span><b>01</b> Live inventory</span>
@@ -218,7 +220,7 @@ export default function Home() {
       <footer className="reframeFooter">
         <div className="reframeContainer reframeFooterGrid">
           <div><div className="reframeFooterMark">MR</div><h2>Keep moving.</h2><p>MR MOBILES · Tank Street, Hosur</p></div>
-          <div className="reframeFooterLinks"><a href="#stock">Shop stock</a><a href="/upgrade">Repair desk</a><a href="mailto:contact@mrmobiles.in">Contact team</a></div>
+          <div className="reframeFooterLinks"><a href="#stock">Shop stock</a><a href="/upgrade">Repair desk</a><a href="https://t.me/MrMobileDoctor_bot?start=support" target="_blank" rel="noreferrer">Support bot</a></div>
           <div className="reframeFooterNote">Built for everyday devices.<br />Made for Hosur.</div>
         </div>
       </footer>
